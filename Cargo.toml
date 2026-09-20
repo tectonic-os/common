@@ -1,0 +1,10 @@
+[package]
+name = "common"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "The components every Tectonic command and the bootc installer share"
+
+[dependencies]
+libc = "0.2"
+ratatui = { version = "0.30.2", default-features = false, features = ["crossterm"] }
