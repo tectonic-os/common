@@ -784,10 +784,12 @@ fn a_table_field_draws_its_headings_its_rows_and_the_hot_one() {
             "disk",
             "disk",
             &["size", "filesystem", "format", "type", "mount"],
+            &[],
             rows.clone(),
             vec![true, false],
             vec![Vec::new(), Vec::new()],
             0,
+            false,
             false,
         ),
     ];
@@ -919,10 +921,12 @@ fn a_table_with_long_node_names_still_draws_its_last_columns() {
         "disk selection",
         "disk",
         &copy::layout_headings(),
+        &[],
         rows,
         vec![true; names.len()],
         vec![Vec::new(); names.len()],
         0,
+        false,
         true,
     )];
     let (lines, _, _) = laid_out(&fields, &[0], 0, 0, &Mode::Rows, &[], None, false, &[], &[]);
@@ -944,6 +948,67 @@ fn a_table_with_long_node_names_still_draws_its_last_columns() {
         let row = text(line);
         assert!(row.chars().count() <= PANEL_ROOM, "{row:?}");
     }
+}
+
+/// The table's own cursor carries the marker once the keys are inside it, so
+/// the label above stops reading as the selection.
+#[test]
+fn a_focused_table_moves_the_marker_onto_its_row() {
+    let rows = vec![
+        vec![Cell::set("\u{25c9} /dev/vda"), Cell::new("68.7 GB")],
+        vec![
+            Cell::new("\u{2514}\u{2500} root (/dev/vda1)"),
+            Cell::new("68.7 GB"),
+        ],
+    ];
+    let fields = [Field::table(
+        "disk selection",
+        "disk",
+        &["size"],
+        &[],
+        rows,
+        vec![true, true],
+        vec![Vec::new(); 2],
+        1,
+        false,
+        false,
+    )];
+    let text = |line: &Line<'static>| -> String {
+        line.spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect()
+    };
+    let (resting, _, _) = laid_out(&fields, &[0], 0, 0, &Mode::Rows, &[], None, false, &[], &[]);
+    assert!(
+        text(&resting[0]).starts_with("> "),
+        "{:?}",
+        text(&resting[0])
+    );
+    let (focused, _, _) = laid_out(
+        &fields,
+        &[0],
+        0,
+        0,
+        &Mode::Table,
+        &[],
+        None,
+        false,
+        &[],
+        &[],
+    );
+    // The label gives the marker up, and the row the table's cursor sits on
+    // takes it.
+    assert!(
+        !text(&focused[0]).starts_with('>'),
+        "{:?}",
+        text(&focused[0])
+    );
+    assert!(
+        text(&focused[3]).starts_with("   > "),
+        "{:?}",
+        text(&focused[3])
+    );
 }
 
 /// Draws the installer's screen as a form. Every question stands on it at once,

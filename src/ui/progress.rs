@@ -222,7 +222,7 @@ pub(crate) fn step_line(turn: usize, step: &str) -> String {
     format!("{} {step}", TURNING[turn % TURNING.len()])
 }
 
-fn blend(at: usize, room: usize) -> Color {
+pub(crate) fn blend(at: usize, room: usize) -> Color {
     let step = |cold: u8, hot: u8| {
         let (cold, hot) = (i32::from(cold), i32::from(hot));
         (cold + (hot - cold) * at as i32 / room.max(1) as i32) as u8

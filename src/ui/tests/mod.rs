@@ -8,6 +8,7 @@ mod form;
 mod layout;
 mod menu;
 mod nest;
+mod partition_bar;
 mod progress;
 mod review;
 
@@ -18,6 +19,7 @@ use crate::ui::form::*;
 use crate::ui::layout::*;
 use crate::ui::menu::*;
 use crate::ui::nest::*;
+use crate::ui::partition_bar::*;
 use crate::ui::progress::*;
 use crate::ui::review::*;
 use crate::ui::term::*;

@@ -33,6 +33,7 @@ mod form;
 mod layout;
 mod menu;
 mod nest;
+mod partition_bar;
 mod progress;
 mod review;
 mod term;
@@ -45,6 +46,7 @@ pub use choose::{
 pub use chrome::{in_overlay, in_titled_overlay, PANEL_ROOM, ROW_ROOM};
 pub use form::{form, opens_at, Field, Filled, HeaderLine};
 pub use menu::MenuItem;
+pub use partition_bar::Hole;
 pub use progress::Progress;
 pub use review::{decide, line, offer_over, review};
 pub use term::{bold, own_screen, width, INTERRUPTED};

@@ -142,6 +142,16 @@ pub(crate) fn render<B: Backend>(
         .map_err(|err| err.to_string())
 }
 
+/// Reads one key, but gives up after `ms` and answers `None`. A widget that
+/// draws a moving caret uses this to redraw without a key in between.
+pub(crate) fn read_for(ms: u64) -> Result<Option<KeyCode>, String> {
+    let ready = event::poll(std::time::Duration::from_millis(ms)).map_err(|err| err.to_string())?;
+    match ready {
+        true => read(),
+        false => Ok(None),
+    }
+}
+
 /// Ctrl+C in raw mode arrives as a key. A widget returns this error to say a
 /// user wants out. The calling command must read it.
 pub const INTERRUPTED: &str = "interrupted";

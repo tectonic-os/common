@@ -107,10 +107,20 @@ pub(crate) fn table_headings(headings: &[&str], widths: &[usize]) -> String {
 }
 
 /// Ends an over-long cell with `...`. A hard cut reads as a different word. A
-/// disk model name is the usual cause.
+/// disk model name is the usual cause. A cell ending in a parenthetical keeps
+/// that whole, because a partition row's node is the half the user reads.
 pub(crate) fn clipped(text: &str, width: usize) -> String {
     if text.chars().count() <= width {
         return text.to_string();
+    }
+    if let Some(at) = text.rfind(" (") {
+        let tail = &text[at + 1..];
+        let tail_len = tail.chars().count();
+        // The head needs one character and the ellipsis before the tail.
+        if tail.ends_with(')') && tail_len + 4 <= width {
+            let head: String = text.chars().take(width - tail_len - 3).collect();
+            return format!("{head}...{tail}");
+        }
     }
     match width < 3 {
         true => text.chars().take(width).collect(),

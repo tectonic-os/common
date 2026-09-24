@@ -75,6 +75,9 @@ thread_local! {
     pub(crate) static REVEAL: std::cell::Cell<bool> = const {
         std::cell::Cell::new(false)
     };
+    /// Holds the typing caret's blink step while the form draws. The colour
+    /// walks the accent gradient with it.
+    pub(crate) static CARET: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
 }
 
 /// Runs a widget as a small fixed window, centred, instead of the main box. Use

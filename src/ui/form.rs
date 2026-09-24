@@ -6,6 +6,7 @@ use crate::ui::choose::*;
 use crate::ui::chrome::*;
 use crate::ui::layout::*;
 use crate::ui::menu::*;
+use crate::ui::partition_bar::*;
 use crate::ui::review::*;
 use crate::ui::term::*;
 use crate::ui::SUB_KEYS;
@@ -62,6 +63,11 @@ pub enum Field {
         /// form draws in its label column.
         column: String,
         headings: Vec<String>,
+        /// Gives the value columns their widths. An empty list sizes each column
+        /// to its content, and the label column takes the widest row name. A
+        /// given list keeps the value columns still and lets the label column
+        /// take the room left.
+        widths: Vec<usize>,
         rows: Vec<Vec<Cell>>,
         /// Allows the table cursor to rest on the row. A grey preview row refuses
         /// it.
@@ -72,6 +78,9 @@ pub enum Field {
         /// Marks the table row the table's own cursor sits on. The form cursor and
         /// the option cursor are counted apart from this one.
         cursor: usize,
+        /// Opens the table's own cursor when the form opens on this row, for a
+        /// calling command that just answered a table row.
+        focused: bool,
         /// Records that a disk has been chosen. It drives the table's status glyph
         /// beside the field label.
         chosen: bool,
@@ -164,17 +173,21 @@ impl Field {
         label: &str,
         column: &str,
         headings: &[&str],
+        widths: &[usize],
         rows: Vec<Vec<Cell>>,
         selectable: Vec<bool>,
         menus: Vec<Vec<MenuItem>>,
         cursor: usize,
+        focused: bool,
         chosen: bool,
     ) -> Self {
         Self::Table {
             label: label.to_string(),
             column: column.to_string(),
             headings: headings.iter().map(|heading| heading.to_string()).collect(),
+            widths: widths.to_vec(),
             cursor: cursor.min(rows.len().saturating_sub(1)),
+            focused,
             rows,
             selectable,
             menus,
@@ -329,6 +342,18 @@ pub enum HeaderLine {
     /// state that holds. Amber marks one that does not.
     Good(String, String),
     Warn(String, String),
+    /// Draws the free region a new partition goes in, with the partition at
+    /// its offset inside it. `offset` and `size` are the indices of the two
+    /// measure fields that place the partition, so the bar follows what the
+    /// user types. `available` labels the line under the bar that states the
+    /// room of the region drawn. A deleted partition's space merges with the
+    /// free space beside it, so that room is what one new partition can take.
+    Placement {
+        holes: Vec<Hole>,
+        offset: usize,
+        size: usize,
+        available: String,
+    },
 }
 
 /// States what a key means. With the form cursor, it is the whole of the form's
@@ -400,9 +425,19 @@ pub fn form(
         let mut cursor = opens_at(&shown(fields), start);
         let mut button = 0usize;
         let mut mode = Mode::Rows;
+        // A table the calling command just answered opens with its own cursor,
+        // so the user sees which row the answer landed on.
+        if let Some(row) = shown(fields).get(cursor) {
+            if matches!(fields[*row], Field::Table { focused: true, .. }) {
+                mode = Mode::Table;
+            }
+        }
         // Records whether the blocked first action has been tried. Trying it is
         // what asks for the reason, and the form says nothing before then.
         let mut tried = false;
+        // Counts the typing caret's blink steps. It moves only while a text field
+        // holds the keys, so an idle form draws no frames of its own.
+        let mut caret: u8 = 0;
         loop {
             // One field can decide whether another is a question at all, so this
             // is asked on every draw.
@@ -432,6 +467,9 @@ pub fn form(
                 }
             }
             let blocked = blocked(fields);
+            // The caret's step rides the frame, so `laid_out` colours it without
+            // another parameter on its long argument list.
+            CARET.with(|step| step.set(caret));
             let (lines, focus, tail) = laid_out(
                 fields,
                 &visible,
@@ -479,7 +517,17 @@ pub fn form(
                 // behind itself. The form outlives the terminal it was drawn on.
                 BACKDROP.with(|saved| *saved.borrow_mut() = Some(frame.buffer_mut().clone()));
             })?;
-            let Some(key) = read()? else { continue };
+            // The caret redraws on a clock while a text field holds the keys, so
+            // the blink does not wait for the next key. A frozen caret, which the
+            // golden transcript uses, reads as every other mode does.
+            let key = match matches!(mode, Mode::Typing) && !caret_frozen() {
+                true => read_for(CARET_TICK_MS)?,
+                false => read()?,
+            };
+            let Some(key) = key else {
+                caret = caret.wrapping_add(1);
+                continue;
+            };
             let Some(row) = at_row else {
                 // Actions row, the one form row that holds no field.
                 match key {
@@ -755,6 +803,18 @@ pub fn form(
                     KeyCode::Enter if matches!(fields[row], Field::Action { .. }) => {
                         return Ok(Filled::Opened(row))
                     }
+                    // Enter on the table field opens the table at its own top,
+                    // where the disk is. A calling command that just answered a
+                    // table row reopens focused instead, and keeps that row.
+                    KeyCode::Enter if matches!(fields[row], Field::Table { .. }) => {
+                        if let Field::Table {
+                            selectable, cursor, ..
+                        } = &mut fields[row]
+                        {
+                            *cursor = first_selectable(selectable);
+                        }
+                        mode = Mode::Table;
+                    }
                     KeyCode::Enter => mode = opened(&fields[row]),
                     _ => {}
                 },
@@ -887,4 +947,22 @@ fn left_row(left: &mut Vec<usize>, row: usize) {
     if !left.contains(&row) {
         left.push(row);
     }
+}
+
+/// Gives the first row the cursor can rest on. A table with no selectable row
+/// answers the first row, because the cursor then has nowhere else to stand.
+pub(crate) fn first_selectable(selectable: &[bool]) -> usize {
+    selectable.iter().position(|ok| *ok).unwrap_or(0)
+}
+
+/// Holds how long one caret blink lasts. The form redraws about eight times a
+/// second while a text field is typed into, which reads as a flash without
+/// redrawing so often that a serial console loses bytes.
+const CARET_TICK_MS: u64 = 120;
+
+/// Reports whether the caret must hold still. A drawn transcript compares every
+/// byte, and a caret that redraws on a clock makes the transcript depend on the
+/// runner's timing rather than on the keys typed.
+pub(crate) fn caret_frozen() -> bool {
+    std::env::var_os("TECT_CARET").is_some_and(|value| value == "static")
 }

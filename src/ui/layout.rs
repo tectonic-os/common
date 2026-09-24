@@ -4,10 +4,16 @@
 use crate::ui::cells::*;
 use crate::ui::chrome::*;
 use crate::ui::form::*;
+use crate::ui::partition_bar::{chosen, placed, said};
+use crate::ui::progress::blend;
 use crate::ui::table;
 use crate::ui::NO_CHOICES;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
+
+/// Counts the steps the typing caret walks through the accent gradient. The
+/// blink is the step changing, and the modulo brings it back to the start.
+const CARET_STEPS: usize = 8;
 
 /// Reports which form rows named by `invalid` are finished being answered. A row
 /// counts as finished once it has been left. If one half of a pair is still
@@ -65,10 +71,24 @@ pub(crate) fn laid_out(
         .map(|row| fields[*row].label().chars().count())
         .max()
         .unwrap_or(0);
+    let labels = width;
     for row in visible {
         if let Field::Table { rows, .. } = &fields[*row] {
             for cells in rows {
                 width = width.max(cells.first().map_or(0, |cell| cell.text.chars().count()));
+            }
+        }
+    }
+    // A table given its own column widths keeps the value columns still, and the
+    // label column takes the room the widget has left. Long row names then give
+    // way to the columns rather than moving them. The form's own labels never
+    // give way, because a clipped question is a question the user cannot read.
+    for row in visible {
+        if let Field::Table { widths, .. } = &fields[*row] {
+            if !widths.is_empty() {
+                let fixed: usize =
+                    widths.iter().sum::<usize>() + 2 * widths.len().saturating_sub(1);
+                width = form_room().saturating_sub(7 + fixed).max(1).max(labels);
             }
         }
     }
@@ -124,6 +144,36 @@ pub(crate) fn laid_out(
                     Span::styled(value.clone(), Style::new().fg(colour)),
                 ]));
             }
+            // A measure field holds digits only. An empty field reads as zero,
+            // which draws no partition until the user types a size. A number
+            // too long for a `u64` reads as the largest one, so the bar draws
+            // it red where the window refuses it.
+            HeaderLine::Placement {
+                holes,
+                offset,
+                size,
+                available,
+            } => {
+                let gb = |at: &usize| match fields.get(*at).map(Field::value) {
+                    Some(typed) if !typed.is_empty() => typed.parse().unwrap_or(u64::MAX),
+                    _ => 0,
+                };
+                // The bar spans the whole room between the paddings of the
+                // window, so it stands centred and ignores the form columns.
+                lines.push(Line::from(placed(holes, gb(offset), gb(size), form_room())));
+                if let Some((hole, _)) = chosen(holes, gb(offset), gb(size)) {
+                    lines.push(Line::default());
+                    lines.push(Line::from(vec![
+                        Span::styled(format!("     {available:<width$}  "), Style::new().dim()),
+                        Span::raw(said(hole.gb)),
+                    ]));
+                }
+                // A panel line under the bar belongs to the form rows, so a
+                // blank sets the bar apart from it.
+                if at + 1 < header.len() {
+                    lines.push(Line::default());
+                }
+            }
         }
     }
     if !header.is_empty() {
@@ -172,7 +222,7 @@ pub(crate) fn laid_out(
         // the label goes plain, because the open option is then the only
         // row drawn hot. A list open under another row changes no label but its own.
         let label_style = match here {
-            true if open.is_some() => Style::new(),
+            true if open.is_some() || table_focused => Style::new(),
             true => Style::new().fg(HIGHLIGHT).bold(),
             // A field the user cannot answer draws dim, so the form says which of its
             // rows are questions without being told.
@@ -185,6 +235,7 @@ pub(crate) fn laid_out(
             label,
             column,
             headings,
+            widths: fixed,
             rows,
             cursor: table_cursor,
             ..
@@ -192,18 +243,26 @@ pub(crate) fn laid_out(
         {
             let heads: Vec<&str> = headings.iter().map(String::as_str).collect();
             // The row prefix and the label column draw before the value columns,
-            // so the value columns take what is left of the widget's room.
-            let widths = column_widths(
-                &heads,
-                &value_cells(rows),
-                form_room().saturating_sub(7 + width),
-            );
+            // so the value columns take what is left of the widget's room. A
+            // table that names its own widths keeps them, because the row names
+            // then give way instead of the columns moving.
+            let widths = match fixed.is_empty() {
+                true => column_widths(
+                    &heads,
+                    &value_cells(rows),
+                    form_room().saturating_sub(7 + width),
+                ),
+                false => fixed.clone(),
+            };
             let field_at = lines.len();
             lines.push(Line::from(vec![
                 Span::styled(
-                    match here {
-                        true => "> ",
-                        false => "  ",
+                    match (here, table_focused) {
+                        // The table's own cursor carries the marker once the keys
+                        // are inside it, the same way an open option list takes
+                        // the marker from its row.
+                        (true, false) => "> ",
+                        _ => "  ",
                     },
                     label_style,
                 ),
@@ -221,14 +280,15 @@ pub(crate) fn laid_out(
             let first = lines.len();
             for (n, cells) in rows.iter().enumerate() {
                 // Two columns for the panel section body and three for the status
-                // column, the same prefix the label and heading rows carry.
-                let mut spans = vec![Span::raw("     ")];
-                spans.extend(table_row_spans(
-                    cells,
-                    width,
-                    &widths,
-                    table_focused && here && n == *table_cursor,
-                ));
+                // column, the same prefix the label and heading rows carry. The
+                // row the table's cursor is on takes the marker when the table
+                // holds the keys, so the pointer reads on the row itself.
+                let hot = table_focused && here && n == *table_cursor;
+                let mut spans = vec![match hot {
+                    true => Span::styled("   > ", Style::new().fg(HIGHLIGHT).bold()),
+                    false => Span::raw("     "),
+                }];
+                spans.extend(table_row_spans(cells, width, &widths, hot));
                 lines.push(Line::from(spans));
             }
             if here {
@@ -241,11 +301,13 @@ pub(crate) fn laid_out(
             continue;
         }
         let field_at = lines.len();
-        // The block character draws the caret. This widget draws no terminal cursor
-        // of its own, and a field being typed into must look different from one
-        // the user is not typing into.
-        let value = match here && typing {
-            true => format!("{}\u{2588}", field.typing()),
+        // The caret draws as a quarter block after the text. This widget opens no
+        // terminal cursor of its own, and a field being typed into must read
+        // differently from one the user is not typing into. Its colour walks the
+        // accent gradient, so the blink reads on a console drawing no cursor.
+        let editing = here && typing;
+        let value = match editing {
+            true => field.typing(),
             false => field.shown(),
         };
         let mut row = vec![
@@ -274,6 +336,13 @@ pub(crate) fn laid_out(
         // grey after the value, so the field line reads its own meaning.
         if let Field::Measure { unit, .. } = field {
             row.push(Span::styled(format!(" {unit}"), Style::new().dim()));
+        }
+        if editing {
+            let caret = CARET.with(std::cell::Cell::get);
+            row.push(Span::styled(
+                "\u{258e}",
+                Style::new().fg(blend(caret as usize % CARET_STEPS, CARET_STEPS)),
+            ));
         }
         lines.push(Line::from(row));
         rows_began = true;
