@@ -54,7 +54,9 @@ mod copy {
     pub const PASSWORD_SET: &str = "set";
     pub const READY: &str = "Ready to install?";
     pub const RECOVERY_HEADING: &str = "LUKS disk encryption recovery key:";
-    pub const RESTART: &str = "Restart now";
+    pub const RESTART_AUTO: &str = "Restart and finalize (automatic)";
+    pub const RESTART_MANUAL: &str = "Restart and finalize (manual)";
+    pub const AUTO_WINDOW: &str = "until then this key opens the disk without a passphrase";
     pub const ROW_ENCRYPTION: &str = "encryption";
     pub const SHUT_DOWN: &str = "Shut down";
     pub const START_INSTALLATION: &str = "Start Installation";

@@ -40,6 +40,9 @@ pub struct Choice {
     pub tint: bool,
     /// Draws the label as a section heading. See `heading`.
     pub heading: bool,
+    /// Draws the label in the warning colour. The reading user must act on
+    /// the row before the answer it belongs to. See `warning`.
+    pub warning: bool,
 }
 
 impl Choice {
@@ -54,6 +57,7 @@ impl Choice {
             dim: false,
             tint: false,
             heading: false,
+            warning: false,
         }
     }
 
@@ -93,6 +97,13 @@ impl Choice {
     pub fn heading(mut self) -> Self {
         self.available = false;
         self.heading = true;
+        self
+    }
+
+    /// Draws the label in the warning colour, the same amber `decide` gives a
+    /// must-read fact. The row stays an answer, unlike a heading.
+    pub fn warning(mut self) -> Self {
+        self.warning = true;
         self
     }
 
@@ -439,10 +450,11 @@ pub(crate) fn draw(
                 Some(_) => "[ ] ",
             };
             // A section heading takes the panel section-title style, white and
-            // bold.
+            // bold. A warning takes the amber a must-read fact draws in.
             let row = match (choice.heading, choice.dim) {
                 (true, _) => Style::new().fg(Color::White).bold(),
                 (false, true) => Style::new().dim(),
+                (false, false) if choice.warning => Style::new().fg(AMBER).bold(),
                 (false, false) => Style::new(),
             };
             let mut spans = vec![

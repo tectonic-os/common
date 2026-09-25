@@ -266,23 +266,24 @@ pub(crate) fn decide_draw(
     frame.render_widget(Paragraph::new(footer), act);
 }
 
-/// Offers a single action over read-only rows. Esc is the way out, and `keys`
-/// says so. A command that sets `CHROME` opens full screen and paints over
-/// the output the command printed before it.
+/// Offers the actions over read-only rows. Esc is the way out, and `keys`
+/// says so. The cursor opens on the first action, and the answer is the
+/// chosen action's position in `actions`. A command that sets `CHROME` opens
+/// full screen and paints over the output the command printed before it.
 pub fn offer_over(
     question: &str,
     rows: Vec<Choice>,
-    action: &str,
+    actions: &[Choice],
     keys: &str,
-) -> Result<bool, String> {
+) -> Result<Option<usize>, String> {
     let mut options = rows;
+    let first = options.len() + 1;
     options.push(Choice::new("", ""));
-    options.push(Choice::new(action, ""));
-    let at = options.len() - 1;
+    options.extend(actions.iter().cloned());
     let chosen = inline((options.len() + 2) as u16, |terminal| {
-        pick(terminal, question, &options, keys, at)
+        pick(terminal, question, &options, keys, first)
     })?;
-    Ok(chosen == Some(at))
+    Ok(chosen.and_then(|chosen| chosen.checked_sub(first)))
 }
 
 /// Pads the row labels to one column, adds a spacer row, then the action. The
