@@ -2,6 +2,9 @@
 name = "common"
 version = "0.1.0"
 edition = "2021"
+# The lowest toolchain the crate builds and tests on. CI tests on it, so a
+# dependency bump that needs a newer one fails there.
+rust-version = "1.88"
 publish = false
 description = "The components every Tectonic command and the bootc installer share"
 
