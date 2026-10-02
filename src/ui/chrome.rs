@@ -225,14 +225,10 @@ pub(crate) fn centred(area: Rect, width: u16, height: u16) -> Rect {
     }
 }
 
-/// Centres a read-only screen on both axes. It takes the widest row plus the
-/// cursor marker, and its own rows where the widget box has them to give.
+/// Centres a read-only screen on both axes. It takes the widest row, which
+/// already holds its cursor column, and its own rows where the widget box has
+/// them to give.
 pub(crate) fn set_in(body: Rect, items: &[ListItem], rows: usize) -> Rect {
-    let width = items
-        .iter()
-        .map(ListItem::width)
-        .max()
-        .unwrap_or(0)
-        .saturating_add(2) as u16;
+    let width = items.iter().map(ListItem::width).max().unwrap_or(0) as u16;
     centred(body, width, rows.min(usize::from(body.height)) as u16)
 }

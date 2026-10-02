@@ -52,14 +52,17 @@ fn the_installer_box_reads_square_on_the_measured_consoles() {
 /// its own rows where the box has more to give than it needs.
 #[test]
 fn a_read_only_screen_is_set_in_the_middle_of_the_box() {
-    let items = [ListItem::new("Recovery Key:"), ListItem::new("a short row")];
+    let items = [
+        ListItem::new("Recovery Key:"),
+        ListItem::new("  a short row"),
+    ];
     let body = Rect::new(5, 7, 68, 30);
-    // Widest list row runs 13 columns and the cursor marker 2, and the screen
-    // asks for four rows. That gives 15 wide and 4 tall, centred.
+    // The widest list row runs 13 columns with its cursor column, and the screen
+    // asks for four rows. That gives 13 wide and 4 tall, centred.
     let placed = set_in(body, &items, 4);
     assert_eq!(
         placed,
-        Rect::new(5 + (68 - 15) / 2, 7 + (30 - 4) / 2, 15, 4)
+        Rect::new(5 + (68 - 13) / 2, 7 + (30 - 4) / 2, 13, 4)
     );
     // More rows than the box body holds fill the body and overflow nothing.
     assert_eq!(set_in(body, &items, 40).height, body.height);
