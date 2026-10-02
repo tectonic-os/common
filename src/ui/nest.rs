@@ -178,7 +178,7 @@ pub(crate) fn nest<B: Backend>(
                 }
             }
             KeyCode::Char(letter) => filter.push(letter),
-            code => move_by(code, &mut state),
+            code => move_by(code, &mut state, rows.len()),
         }
     }
 }

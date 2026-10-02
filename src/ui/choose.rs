@@ -11,7 +11,7 @@ use ratatui::crossterm::event::KeyCode;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Style, Stylize};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{HighlightSpacing, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
 #[derive(Clone)]
@@ -297,6 +297,7 @@ pub(crate) fn pick<B: Backend>(
     selected: usize,
 ) -> Result<Option<usize>, String> {
     let mut state = ListState::default().with_selected(Some(selected));
+    skip_spacers(KeyCode::Down, options, &mut state, Some(selected));
     loop {
         render(
             terminal,
@@ -313,22 +314,61 @@ pub(crate) fn pick<B: Backend>(
             },
             KeyCode::Esc | KeyCode::Char('q') => return Ok(None),
             code => {
-                move_by(code, &mut state);
-                skip_spacers(code, options, &mut state);
+                let from = state.selected();
+                move_by(code, &mut state, options.len());
+                skip_spacers(code, options, &mut state, from);
             }
         }
     }
 }
 
-/// An option row with no label is a spacer. The cursor passes over it in the
-/// direction it was sent. Only the review screen carries one, above `Create`.
-fn skip_spacers(code: KeyCode, options: &[Choice], state: &mut ListState) {
+/// The cursor passes over a spacer, which is an option row with no label, and
+/// over a section heading. Neither row answers the question.
+fn passed_over(options: &[Choice], at: usize) -> bool {
+    options
+        .get(at)
+        .is_some_and(|row| row.label.is_empty() || row.heading)
+}
+
+/// Moves the cursor past the rows it passes over, in the direction it was sent.
+/// `Home` lands like a step down and `End` like a step up, so each reaches the
+/// first or the last answer. If no answer lies that way, then the cursor goes
+/// back to `from`.
+pub(crate) fn skip_spacers(
+    code: KeyCode,
+    options: &[Choice],
+    state: &mut ListState,
+    from: Option<usize>,
+) {
+    let step = match code {
+        KeyCode::Home => KeyCode::Down,
+        KeyCode::End => KeyCode::Up,
+        code => code,
+    };
     for _ in 0..options.len() {
-        match state.selected() {
-            Some(at) if options.get(at).is_some_and(|row| row.label.is_empty()) => {
-                move_by(code, state)
-            }
-            _ => return,
+        let Some(at) = state.selected() else { return };
+        if !passed_over(options, at) {
+            break;
+        }
+        move_by(step, state, options.len());
+        if state.selected() == Some(at) {
+            break;
+        }
+    }
+    if state.selected().is_some_and(|at| passed_over(options, at)) {
+        state.select(from);
+    }
+    // The list widget scrolls up only as far as the cursor. The headings and
+    // spacers directly above the cursor stay in view, so each group heading stays
+    // readable. The installer's recovery key heading is one of them.
+    if let Some(at) = state.selected() {
+        let top = (0..at)
+            .rev()
+            .take_while(|&above| passed_over(options, above))
+            .last()
+            .unwrap_or(at);
+        if state.offset() > top {
+            *state.offset_mut() = top;
         }
     }
 }
@@ -367,7 +407,7 @@ pub(crate) fn toggle<B: Backend>(
                 _ => {}
             },
             KeyCode::Esc | KeyCode::Char('q') => return Ok(Answer::Cancelled),
-            code => move_by(code, &mut state),
+            code => move_by(code, &mut state, options.len()),
         }
     }
 }
@@ -400,13 +440,19 @@ pub(crate) fn branch(options: &[Choice], at: usize) -> &'static str {
     }
 }
 
-pub(crate) fn move_by(code: KeyCode, state: &mut ListState) {
+/// Moves the cursor over a list of `len` rows. The list widget stores an index
+/// past the last row for `End` and for `Down` on the last row, and clamps it only
+/// while it draws, so the cursor is clamped here before any reader sees it.
+pub(crate) fn move_by(code: KeyCode, state: &mut ListState, len: usize) {
     match code {
         KeyCode::Up | KeyCode::Char('k') => state.select_previous(),
         KeyCode::Down | KeyCode::Char('j') => state.select_next(),
         KeyCode::Home => state.select_first(),
         KeyCode::End => state.select_last(),
         _ => {}
+    }
+    if let (Some(at), Some(last)) = (state.selected(), len.checked_sub(1)) {
+        state.select(Some(at.min(last)));
     }
 }
 
@@ -440,6 +486,7 @@ pub(crate) fn draw(
         );
     }
 
+    let selected = state.selected();
     let items: Vec<ListItem> = options
         .iter()
         .enumerate()
@@ -457,7 +504,15 @@ pub(crate) fn draw(
                 (false, false) if choice.warning => Style::new().fg(AMBER).bold(),
                 (false, false) => Style::new(),
             };
+            // A heading takes no pointer column, so it sits flush left over the
+            // rows it heads.
+            let pointer = match (choice.heading, selected == Some(at)) {
+                (true, _) => "",
+                (false, true) => "> ",
+                (false, false) => "  ",
+            };
             let mut spans = vec![
+                Span::styled(pointer, row),
                 Span::styled(mark, row),
                 Span::styled(branch(options, at), row),
             ];
@@ -481,7 +536,7 @@ pub(crate) fn draw(
     // reads the same as the highlighted action button on a form.
     frame.render_stateful_widget(
         List::new(items)
-            .highlight_symbol("> ")
+            .highlight_spacing(HighlightSpacing::Never)
             .highlight_style(Style::new().fg(HIGHLIGHT).bold()),
         placed,
         state,
