@@ -16,6 +16,14 @@ fn stem(question: &str) -> &str {
 /// What the transcript goldens drive the binary with.
 const SCRIPT: &str = "TECT_ANSWERS";
 
+/// The sentinel cannot equal valid prompt text. It carries cancellation through
+/// string errors without masking an operation error.
+const CANCELLED: &str = "\0cancelled";
+
+pub fn cancelled(message: &str) -> bool {
+    message == CANCELLED
+}
+
 pub struct Prompt {
     ask: bool,
     /// Whether an answer may be asked for with a widget, which redirected
@@ -121,8 +129,22 @@ impl Prompt {
         prefix: Option<&str>,
         default: Option<&str>,
     ) -> Result<String, String> {
+        match self.asked_answer(given, question, flag, prefix, default)? {
+            Some(answer) => Ok(answer),
+            None => Err(CANCELLED.to_string()),
+        }
+    }
+
+    fn asked_answer(
+        &self,
+        given: Option<String>,
+        question: &str,
+        flag: &str,
+        prefix: Option<&str>,
+        default: Option<&str>,
+    ) -> Result<Option<String>, String> {
         if let Some(value) = given.filter(|value| !value.is_empty()) {
-            return Ok(value);
+            return Ok(Some(value));
         }
         let missing = || match default {
             Some(default) => Ok(default.to_string()),
@@ -132,10 +154,10 @@ impl Prompt {
             )),
         };
         if !self.ask {
-            return missing();
+            return missing().map(Some);
         }
         if self.draw {
-            return self.written(question, prefix.unwrap_or(""), default, missing);
+            return self.written_answer(question, prefix.unwrap_or(""), default, missing);
         }
         let labelled = match default {
             Some(default) => format!("{} [{default}]", stem(question)),
@@ -146,28 +168,30 @@ impl Prompt {
             Some(prefix) => format!("{labelled}\n{prefix}"),
         };
         match self.read(&labelled, &shown)? {
-            answer if answer.is_empty() => missing(),
-            answer => Ok(answer),
+            answer if answer.is_empty() => missing().map(Some),
+            answer => Ok(Some(answer)),
         }
     }
 
     /// The drawn half of both free-text questions. The default is the widget's
     /// to show, so the question is passed bare. Nothing is echoed for an answer
     /// that ends in the refusal.
-    fn written(
+    fn written_answer(
         &self,
         question: &str,
         prefix: &str,
         default: Option<&str>,
         missing: impl Fn() -> Result<String, String>,
-    ) -> Result<String, String> {
-        let typed = ui::line(stem(question), prefix, default)?;
+    ) -> Result<Option<String>, String> {
+        let Some(typed) = ui::line(stem(question), prefix, default)? else {
+            return Ok(None);
+        };
         let answer = match typed.is_empty() {
             true => missing()?,
             false => typed,
         };
         println!("{}: {prefix}{answer}\n", stem(question));
-        Ok(answer)
+        Ok(Some(answer))
     }
 
     /// The same, asked over two lines: the question on its own, the answer
@@ -202,21 +226,34 @@ impl Prompt {
         no: &str,
         current: bool,
     ) -> Result<bool, String> {
+        self.confirm_answer(question, yes, no, current)?
+            .ok_or_else(|| CANCELLED.to_string())
+    }
+
+    fn confirm_answer(
+        &self,
+        question: &str,
+        yes: &str,
+        no: &str,
+        current: bool,
+    ) -> Result<Option<bool>, String> {
         if !self.ask {
-            return Ok(current);
+            return Ok(Some(current));
         }
         if self.draw {
             let chosen = ui::confirm_current(question, yes, no, current)?;
-            println!("{}: {}\n", stem(question), if chosen { yes } else { no });
+            if let Some(chosen) = chosen {
+                println!("{}: {}\n", stem(question), if chosen { yes } else { no });
+            }
             return Ok(chosen);
         }
         let question = format!("{} ({yes}/{no})", stem(question));
         let answer = self.read(&question, &format!("{question}\n"))?;
         if answer.is_empty() {
-            return Ok(current);
+            return Ok(Some(current));
         }
         let first = |word: &str| word.chars().next().map(|c| c.to_ascii_lowercase());
-        Ok(first(&answer) != first(no))
+        Ok(Some(first(&answer) != first(no)))
     }
 
     /// One of a set, or none of them: an inline select list where the output is
@@ -254,7 +291,7 @@ impl Prompt {
             if let Some(index) = chosen {
                 println!("{}: {}\n", stem(question), options[index].label);
             }
-            return Ok(chosen);
+            return chosen.map(Some).ok_or_else(|| CANCELLED.to_string());
         }
         self.numbered(options, current.as_slice());
         let question = format!("{} [{}, 0 for none]", stem(question), range(options));
@@ -288,6 +325,9 @@ impl Prompt {
         }
         if self.draw {
             let answer = ui::multi(question, options, on)?;
+            if matches!(answer, Answer::Cancelled) {
+                return Err(CANCELLED.to_string());
+            }
             println!("{}: {}\n", stem(question), said(&answer, options));
             return Ok(answer);
         }

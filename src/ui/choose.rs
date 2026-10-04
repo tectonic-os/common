@@ -5,7 +5,7 @@ use crate::ui::chrome::*;
 use crate::ui::nest::*;
 use crate::ui::progress::*;
 use crate::ui::term::*;
-use crate::ui::{EITHER, PICK, TOGGLE};
+use crate::ui::{EITHER, EITHER_CANCEL, PICK, TOGGLE};
 use ratatui::backend::Backend;
 use ratatui::crossterm::event::KeyCode;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -261,17 +261,45 @@ pub fn confirm_over(
     })
 }
 
-pub fn confirm(question: &str, yes: &str, no: &str) -> Result<bool, String> {
+pub fn confirm(question: &str, yes: &str, no: &str) -> Result<Option<bool>, String> {
     confirm_current(question, yes, no, true)
 }
 
-/// Opens on the existing answer.
-pub fn confirm_current(question: &str, yes: &str, no: &str, current: bool) -> Result<bool, String> {
+/// The calling command must preserve `None`. Esc cancels the operation.
+pub fn confirm_current(
+    question: &str,
+    yes: &str,
+    no: &str,
+    current: bool,
+) -> Result<Option<bool>, String> {
+    confirm_choice(question, yes, no, current, EITHER_CANCEL)
+}
+
+pub fn confirm_or_no(question: &str, yes: &str, no: &str) -> Result<bool, String> {
+    confirm_current_or_no(question, yes, no, true)
+}
+
+pub fn confirm_current_or_no(
+    question: &str,
+    yes: &str,
+    no: &str,
+    current: bool,
+) -> Result<bool, String> {
+    Ok(confirm_choice(question, yes, no, current, EITHER)?.unwrap_or(false))
+}
+
+fn confirm_choice(
+    question: &str,
+    yes: &str,
+    no: &str,
+    current: bool,
+    keys: &str,
+) -> Result<Option<bool>, String> {
     let options = [Choice::new(yes, ""), Choice::new(no, "")];
     let chosen = inline(height(options.len()), |terminal| {
-        pick(terminal, question, &options, EITHER, usize::from(!current))
+        pick(terminal, question, &options, keys, usize::from(!current))
     })?;
-    Ok(chosen == Some(0))
+    Ok(chosen.map(|chosen| chosen == 0))
 }
 
 /// Answers with any of `options`, or with none. `on` is what is already true,
