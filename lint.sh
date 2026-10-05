@@ -17,5 +17,5 @@ echo "lint: the source is clean"
 cargo deny --locked check bans licenses sources
 echo "lint: the dependency policy accepts the locked graph"
 
-cargo test --quiet
+cargo nextest run --locked
 echo "lint: the components do what they did"

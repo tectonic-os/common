@@ -9,9 +9,9 @@ a vulnerability.
 
 A pull request merges after these pass, beside GitHub's CodeQL analysis:
 
-- `lint` runs `./lint.sh`: the dependency floor, rustfmt and the tests.
-- `msrv` runs `cargo test --locked` on the `rust-version` that `Cargo.toml`
-  states.
+- `lint` runs `./lint.sh`: rustfmt, the dependency policy and the tests.
+- `msrv` runs `cargo nextest run --locked --profile ci` on the `rust-version`
+  that `Cargo.toml` states.
 - `typed-title` checks the pull request title.
 
 Run `./lint.sh --fix` to format, and `./lint.sh` before you push. It is the
