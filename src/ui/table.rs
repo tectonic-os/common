@@ -23,6 +23,10 @@ pub fn render(title: &str, header: &[&str], rows: &[(Vec<String>, bool)]) -> Str
 }
 
 fn draw(width: u16, title: &str, header: &[&str], rows: &[(Vec<String>, bool)]) -> String {
+    ansi(&table(width, title, header, rows))
+}
+
+fn table(width: u16, title: &str, header: &[&str], rows: &[(Vec<String>, bool)]) -> Buffer {
     let widths = columns(header, rows, width.saturating_sub(2));
     // The table frame takes the width of its own cells. A frame stretched to the
     // terminal is the padding this rendering exists to stop.
@@ -53,7 +57,7 @@ fn draw(width: u16, title: &str, header: &[&str], rows: &[(Vec<String>, bool)]) 
         .header(cells_of(head).height(titles).bold())
         .block(Block::bordered().title(title.bold()))
         .render(area, &mut buffer);
-    ansi(&buffer)
+    buffer
 }
 
 fn fold(widths: &[u16], cells: impl Iterator<Item = String>) -> Vec<Vec<String>> {
@@ -229,13 +233,20 @@ mod tests {
 
     #[test]
     fn a_defect_row_is_the_only_coloured_one() {
-        let drawn = draw(40, "Capabilities", &HEADER, &rows());
-        let coloured: Vec<&str> = drawn
-            .lines()
-            .filter(|line| line.contains("\u{1b}[38;5;"))
+        let buffer = table(40, "Capabilities", &HEADER, &rows());
+        let coloured: Vec<(usize, &ratatui::buffer::Cell)> = buffer
+            .content()
+            .iter()
+            .enumerate()
+            .filter(|(_, cell)| cell.fg != Color::Reset)
             .collect();
-        assert_eq!(coloured.len(), 1, "{drawn}");
-        assert!(coloured[0].contains("nothing-provides"), "{drawn}");
+        assert!(!coloured.is_empty());
+        assert!(coloured.iter().all(|(_, cell)| cell.fg == Color::Red));
+        let width = usize::from(buffer.area.width);
+        let row = coloured[0].0 / width;
+        assert!(coloured.iter().all(|(at, _)| at / width == row));
+        let text: String = coloured.iter().map(|(_, cell)| cell.symbol()).collect();
+        assert!(text.contains("nothing-provides"), "{text}");
     }
 
     #[test]
