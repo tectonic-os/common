@@ -2,11 +2,15 @@
 name = "common"
 version = "0.1.0"
 edition = "2021"
-# The lowest toolchain the crate builds and tests on. CI tests on it, so a
-# dependency bump that needs a newer one fails there.
 rust-version = "1.88"
+# Application crates pin this crate by Git revision. It stays unpublished so
+# registry versions cannot become a second distribution channel for shared
+# code.
 publish = false
 description = "The components every Tectonic command and the bootc installer share"
+
+[features]
+test-support = []
 
 [dependencies]
 libc = "0.2"

@@ -1,5 +1,3 @@
-//! Paints the box every widget draws inside and defines the installer palette.
-
 use crate::ui::progress::*;
 use crate::ui::term::*;
 use ratatui::buffer::Buffer;
@@ -17,15 +15,12 @@ pub(crate) const AMBER: Color = Color::Rgb(0xff, 0xbf, 0x00);
 /// no such state. The user's own two answers disagree.
 pub(crate) const ALERT: Color = Color::Rgb(0xff, 0x5c, 0x57);
 
-/// Past this console width the widget box stops growing and centres instead. A
-/// line two hundred columns wide is hard to read back. The width fits the
-/// partition table's six columns.
+/// The width cap keeps prose readable and still fits the partition table
+/// columns.
 pub(crate) const WIDEST: u16 = 92;
 
-/// Counts the columns inside the widget box. It takes the box width and drops
-/// both borders and both paddings. The calling command wraps a paragraph to this width
-/// where the form is not drawing. The wrap must fit the narrowest console the installer
-/// media ships to, even where the box is wider.
+/// The calling command wraps panel prose to the narrowest supported console,
+/// even when the widget box is wider.
 pub const PANEL_ROOM: usize = (if WIDEST < NARROWEST as u16 {
     WIDEST
 } else {
@@ -37,10 +32,8 @@ pub const PANEL_ROOM: usize = (if WIDEST < NARROWEST as u16 {
 /// wraps short of the panel room.
 pub const ROW_ROOM: usize = PANEL_ROOM - 2;
 
-/// Measured 2026-09-17 on the media's kmscon (160x50 cells on 1280x800) and on
-/// the kernel-VT fallback (16x32, 80x25), which share the 1:2 shape. See
-/// `measurements/installer-console.md`. A box that reads square then has half as
-/// many rows as columns.
+/// Installer console cells are twice as tall as they are wide, so a square box
+/// needs half as many rows as columns.
 const CELL: (u16, u16) = (8, 16);
 
 /// Every colour on the installer screen comes from the progress bar's gradient.
@@ -78,6 +71,70 @@ thread_local! {
     /// Holds the typing caret's blink step while the form draws. The colour
     /// walks the accent gradient with it.
     pub(crate) static CARET: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
+    /// A render call owns whether its frame carries the widget box. The scoped
+    /// value lets an in-memory backend compose the same frame without changing
+    /// the process-wide terminal mode.
+    static FRAME_BOX: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
+}
+
+struct FrameBox(Option<bool>);
+
+impl Drop for FrameBox {
+    fn drop(&mut self) {
+        FRAME_BOX.with(|boxed| boxed.set(self.0));
+    }
+}
+
+pub(crate) fn in_frame_box<T>(boxed: bool, body: impl FnOnce() -> T) -> T {
+    let previous = FRAME_BOX.with(|held| held.replace(Some(boxed)));
+    let _restore = FrameBox(previous);
+    body()
+}
+
+pub(crate) fn boxed() -> bool {
+    FRAME_BOX
+        .with(std::cell::Cell::get)
+        .unwrap_or_else(|| has_box(CHROME.get().map(String::as_str)))
+}
+
+pub(crate) fn has_box(title: Option<&str>) -> bool {
+    title.is_some() || OVERLAY_TITLE.with(|held| held.borrow().is_some())
+}
+
+struct OverlayFrame {
+    size: Option<(u16, u16)>,
+    title: Option<String>,
+    backdrop: Option<Option<Buffer>>,
+}
+
+impl Drop for OverlayFrame {
+    fn drop(&mut self) {
+        OVERLAY.with(|held| held.set(self.size));
+        OVERLAY_TITLE.with(|held| {
+            held.replace(self.title.take());
+        });
+        if let Some(backdrop) = self.backdrop.take() {
+            BACKDROP.with(|held| {
+                held.replace(backdrop);
+            });
+        }
+    }
+}
+
+pub(crate) fn in_overlay_frame<T>(
+    width: u16,
+    height: u16,
+    title: Option<&str>,
+    backdrop: Option<&Buffer>,
+    body: impl FnOnce() -> T,
+) -> T {
+    let _restore = OverlayFrame {
+        size: OVERLAY.with(|held| held.replace(Some((width, height)))),
+        title: OVERLAY_TITLE.with(|held| held.replace(title.map(str::to_string))),
+        backdrop: backdrop
+            .map(|backdrop| BACKDROP.with(|held| held.replace(Some(backdrop.clone())))),
+    };
+    body()
 }
 
 /// Runs a widget as a small fixed window, centred, instead of the main box. Use
@@ -87,10 +144,7 @@ pub fn in_overlay<T>(
     height: u16,
     body: impl FnOnce() -> Result<T, String>,
 ) -> Result<T, String> {
-    OVERLAY.with(|overlay| overlay.set(Some((width, height))));
-    let done = body();
-    OVERLAY.with(|overlay| overlay.set(None));
-    done
+    in_overlay_frame(width, height, None, None, body)
 }
 
 /// Runs the same overlay window under a title of its own.
@@ -100,10 +154,7 @@ pub fn in_titled_overlay<T>(
     title: &str,
     body: impl FnOnce() -> Result<T, String>,
 ) -> Result<T, String> {
-    OVERLAY_TITLE.with(|held| *held.borrow_mut() = Some(title.to_string()));
-    let done = in_overlay(width, height, body);
-    OVERLAY_TITLE.with(|held| *held.borrow_mut() = None);
-    done
+    in_overlay_frame(width, height, Some(title), None, body)
 }
 
 /// Paints the widget box where a command owns the console, then answers with the
@@ -152,9 +203,8 @@ pub(crate) fn chrome(
     };
     let full = frame.area();
     // The height matches the width in console pixels, so the box reads square. A
-    // taller widget still gets its rows, and a short console caps both in
-    // `centred`. The kernel-VT fallback has 25 rows, where that cap leaves the box
-    // working and no longer square.
+    // taller widget still gets its rows. A short console caps the height in
+    // `centred`, so the box remains usable without staying square.
     let (width, tall) = match OVERLAY.with(std::cell::Cell::get) {
         Some((width, height)) => (width.min(full.width), height.min(full.height)),
         None => {
@@ -200,17 +250,17 @@ pub(crate) fn chrome(
 /// Returns nothing where the widget box already draws the key legend on its
 /// bottom border.
 pub(crate) fn hint_row(keys: &str) -> &str {
-    match CHROME.get() {
-        Some(_) => "",
-        None => keys,
+    match boxed() {
+        true => "",
+        false => keys,
     }
 }
 
 /// Returns nothing where the widget box's top border already draws the question.
 pub(crate) fn head_row(question: &str) -> &str {
-    match CHROME.get() {
-        Some(_) => "",
-        None => question,
+    match boxed() {
+        true => "",
+        false => question,
     }
 }
 

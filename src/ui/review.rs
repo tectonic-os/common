@@ -1,6 +1,3 @@
-//! Draws back what a command collected, so the user can decide on it. It draws
-//! answer summaries, destructive confirmations, and typed lines.
-
 use crate::ui::choose::*;
 use crate::ui::chrome::*;
 use crate::ui::table;
@@ -92,11 +89,8 @@ pub fn review(
     Ok(chosen.map(|at| at.min(rows.len())))
 }
 
-/// Counts the lines `decide_draw` paints, which sizes `decide`'s widget box. It
-/// counts the heading row where no box carries it, the ready line, the wrapped
-/// cost line with a blank on each side, the warning rows with one trailing blank,
-/// and the answer rows. Held out of `decide` so a later change to the cost block
-/// or the warning block cannot mis-size the inline box without a test catching it.
+/// Snapshot tests share this layout arithmetic with `decide`, so their window
+/// height cannot drift from the production confirmation.
 pub(crate) fn decide_content_height(
     heading: &str,
     note: &str,
@@ -118,6 +112,8 @@ pub(crate) fn decide_content_height(
     };
     rows.len() + 3 + cost + warned + usize::from(!head_row(heading).is_empty())
 }
+
+pub(crate) const LINE_ROWS: u16 = 3;
 
 /// Asks a question over a read-only summary of what answering it would do. The
 /// two answers sit side by side under the summary rows. `true` answers `yes`.
@@ -171,9 +167,8 @@ pub(crate) fn decide_fits(content: usize, height: usize) -> bool {
     content.saturating_add(2) <= height
 }
 
-/// Draws the ready line, the cost line, the summary rows, then the two actions
-/// side by side. The action enter takes carries the palette's hot end, as a form
-/// draws it.
+/// The selected action uses the palette's hot end, matching a selected form
+/// action.
 pub(crate) fn decide_draw(
     frame: &mut Frame,
     area: Rect,
@@ -252,7 +247,7 @@ pub(crate) fn decide_draw(
         .map(Line::width)
         .max()
         .unwrap_or(0) as u16;
-    let placed = match CHROME.get().is_some() {
+    let placed = match boxed() {
         true => {
             let all = lines.len() as u16 + footer.len() as u16;
             centred(area, widest, all)
@@ -308,10 +303,10 @@ fn sheet(rows: &[(String, String)], action: &str, blocked: Option<&str>) -> Vec<
 
 /// The calling command must preserve `None`. Esc cancels the operation.
 pub fn line(question: &str, prefix: &str, default: Option<&str>) -> Result<Option<String>, String> {
-    inline(3, |terminal| {
+    inline(LINE_ROWS, |terminal| {
         let mut typed = String::new();
         loop {
-            render(terminal, 3, LINE_KEYS, question, |frame, area| {
+            render(terminal, LINE_ROWS, LINE_KEYS, question, |frame, area| {
                 written(frame, area, question, prefix, &typed, default)
             })?;
             let Some(key) = read()? else { continue };

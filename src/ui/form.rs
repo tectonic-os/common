@@ -1,6 +1,3 @@
-//! Fills a form of rows in together. It routes each key to the form row under
-//! the cursor.
-
 use crate::ui::cells::*;
 use crate::ui::choose::*;
 use crate::ui::chrome::*;
@@ -11,6 +8,8 @@ use crate::ui::review::*;
 use crate::ui::term::*;
 use crate::ui::SUB_KEYS;
 use ratatui::crossterm::event::KeyCode;
+use ratatui::layout::Rect;
+use ratatui::Frame;
 
 pub enum Field {
     /// Takes a typed answer in place.
@@ -356,9 +355,9 @@ pub enum HeaderLine {
     },
 }
 
-/// States what a key means. With the form cursor, it is the whole of the form's
-/// state.
-pub(crate) enum Mode {
+/// One state drives both the drawn control and the next key, so the screen
+/// cannot disagree with its input routing.
+pub enum Mode {
     Rows,
     Typing,
     Open(usize),
@@ -369,6 +368,10 @@ pub(crate) enum Mode {
         open: Option<usize>,
         cursor: usize,
     },
+}
+
+pub(crate) fn form_frame_rows(lines: usize) -> u16 {
+    lines as u16 + 1
 }
 
 /// Maps a field index to the row it draws on. `shown` gives the drawn rows and
@@ -393,8 +396,8 @@ pub fn form(
     keys: &str,
     header: &[HeaderLine],
     sections: &[(usize, &str)],
-    // Form field the cursor opens on, by its index in `fields`. If `shown` hides
-    // that field, the form opens at the top.
+    // The field index places the opening cursor. If `shown` hides that field,
+    // the form opens at the top.
     start: usize,
     // Form rows that have had the keys and been left again, owned by the calling
     // command. A command that rebuilds `fields` and calls `form` again after an
@@ -489,34 +492,23 @@ pub fn form(
                 Mode::Open(_) | Mode::Table | Mode::TableMenu { .. } => SUB_KEYS,
                 _ => keys,
             };
-            render(terminal, lines.len() as u16 + 1, keys, "", |frame, area| {
-                sheet_of(frame, area, &lines, keys, focus, tail);
-                // A table row's popup menu draws as an overlay window over the
-                // form, the same one the table's own screen draws.
-                if let (Mode::TableMenu { open, cursor }, Some(row)) = (&mode, at_row) {
-                    if let Field::Table {
-                        rows,
-                        menus,
-                        cursor: table_at,
-                        ..
-                    } = &fields[row]
-                    {
-                        let items = menus.get(*table_at).map(Vec::as_slice).unwrap_or(&[]);
-                        let title = rows
-                            .get(*table_at)
-                            .and_then(|cells| cells.first())
-                            .map(Cell::text)
-                            .unwrap_or("")
-                            .trim_start_matches([
-                                '\u{251c}', '\u{2514}', '\u{2500}', '\u{2502}', ' ',
-                            ]);
-                        menu_draw(frame, area, title, items, *open, *cursor);
+            render(
+                terminal,
+                form_frame_rows(lines.len()),
+                keys,
+                "",
+                |frame, area| {
+                    sheet_of(frame, area, &lines, keys, focus, tail);
+                    // A table row's popup menu draws as an overlay window over the
+                    // form, the same one the table's own screen draws.
+                    if let (Mode::TableMenu { open, cursor }, Some(row)) = (&mode, at_row) {
+                        draw_table_menu(frame, area, fields, row, *open, *cursor);
                     }
-                }
-                // Kept so an overlay opened over this form can paint the form
-                // behind itself. The form outlives the terminal it was drawn on.
-                BACKDROP.with(|saved| *saved.borrow_mut() = Some(frame.buffer_mut().clone()));
-            })?;
+                    // An overlay opens after this terminal closes, so it needs a
+                    // copy of the form frame for its backdrop.
+                    BACKDROP.with(|saved| *saved.borrow_mut() = Some(frame.buffer_mut().clone()));
+                },
+            )?;
             // The caret redraws on a clock while a text field holds the keys, so
             // the blink does not wait for the next key. A frozen caret, which the
             // golden transcript uses, reads as every other mode does.
@@ -529,15 +521,14 @@ pub fn form(
                 continue;
             };
             let Some(row) = at_row else {
-                // Actions row, the one form row that holds no field.
+                // The actions row is the only form row that holds no field.
                 match key {
                     KeyCode::Esc | KeyCode::Char('q') => return Ok(Filled::Left),
                     KeyCode::Up | KeyCode::Char('k') => cursor = cursor.saturating_sub(1),
                     KeyCode::Left => button = button.saturating_sub(1),
                     KeyCode::Right => button = (button + 1).min(actions.len().saturating_sub(1)),
                     // `blocked` speaks for the first action only. The other
-                    // actions stay available, because a screen the user cannot leave is
-                    // worse than one the user cannot finish.
+                    // actions stay available because the user must be able to leave.
                     KeyCode::Enter if button > 0 || blocked.is_none() => {
                         return Ok(Filled::Took(button))
                     }
@@ -614,9 +605,8 @@ pub fn form(
                                 if let Field::Pick { at: held, .. } = &mut fields[row] {
                                     *held = Some(taken);
                                 }
-                                // What follows the form row belongs to the calling
-                                // command, so a changed answer hands the form back
-                                // and opens no stale row under it.
+                                // The calling command owns the dependent form rows, so
+                                // a changed answer returns before a stale row opens.
                                 if change {
                                     return Ok(Filled::Changed(row));
                                 }
@@ -830,6 +820,33 @@ pub fn form(
             }
         }
     })
+}
+
+pub(crate) fn draw_table_menu(
+    frame: &mut Frame,
+    area: Rect,
+    fields: &[Field],
+    row: usize,
+    open: Option<usize>,
+    cursor: usize,
+) {
+    let Some(Field::Table {
+        rows,
+        menus,
+        cursor: table_at,
+        ..
+    }) = fields.get(row)
+    else {
+        return;
+    };
+    let items = menus.get(*table_at).map(Vec::as_slice).unwrap_or(&[]);
+    let title = rows
+        .get(*table_at)
+        .and_then(|cells| cells.first())
+        .map(Cell::text)
+        .unwrap_or("")
+        .trim_start_matches(['\u{251c}', '\u{2514}', '\u{2500}', '\u{2502}', ' ']);
+    menu_draw(frame, area, title, items, open, cursor);
 }
 
 /// Moves the cursor to the next form row it can rest on. A form is a list of

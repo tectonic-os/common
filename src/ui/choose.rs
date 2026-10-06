@@ -1,6 +1,3 @@
-//! Asks a question from an option list. A question takes one option, several
-//! options, or one of two answers.
-
 use crate::ui::chrome::*;
 use crate::ui::nest::*;
 use crate::ui::progress::*;
@@ -83,9 +80,8 @@ impl Choice {
         self
     }
 
-    /// Draws the label one character at a time and tints each character by class.
-    /// The LUKS recovery key needs it. That key is 64 characters of hex, held in
-    /// no file, copied off the completion screen by eye.
+    /// The user copies the long hexadecimal recovery key from the screen by eye,
+    /// so each character class needs distinct ink.
     pub fn tinted(mut self) -> Self {
         self.tint = true;
         self
@@ -112,8 +108,8 @@ impl Choice {
         self
     }
 
-    /// Give the options of one group together. A broken run draws the group
-    /// heading once for each part of it.
+    /// The calling command must keep each option group contiguous. A broken run
+    /// repeats the group heading.
     pub fn within(mut self, group: impl Into<String>) -> Self {
         self.group = group.into();
         self
@@ -158,7 +154,7 @@ pub fn choose(
     options: &[&str],
     at: usize,
 ) -> Result<Option<usize>, String> {
-    // One padding row over and under the option list, between the two borders.
+    // The borders leave one padding row above and below the option list.
     let height = options.len() as u16 + 4;
     in_titled_overlay(WINDOW_WIDTH, height, title, || {
         inline(height, |terminal| {
@@ -210,8 +206,8 @@ pub fn confirm_over(
     keys: &str,
 ) -> Result<bool, String> {
     let mut button = 0usize;
-    // The overlay window stands as tall as what it holds. Heading and its blank,
-    // the summary rows, a blank, and the two buttons, inside borders and padding.
+    // The fixed window must include its heading, spacing, summary rows, buttons,
+    // borders and padding.
     let head = usize::from(!heading.is_empty()) * 2;
     let height = (rows.len() + head + 2 + 4) as u16;
     in_titled_overlay(WINDOW_WIDTH, height, title, || {
@@ -324,8 +320,7 @@ pub(crate) fn pick<B: Backend>(
     hint: &str,
     selected: usize,
 ) -> Result<Option<usize>, String> {
-    let mut state = ListState::default().with_selected(Some(selected));
-    skip_spacers(KeyCode::Down, options, &mut state, Some(selected));
+    let mut state = initial_state(options, selected);
     loop {
         render(
             terminal,
@@ -348,6 +343,12 @@ pub(crate) fn pick<B: Backend>(
             }
         }
     }
+}
+
+pub(crate) fn initial_state(options: &[Choice], selected: usize) -> ListState {
+    let mut state = ListState::default().with_selected(Some(selected));
+    skip_spacers(KeyCode::Down, options, &mut state, Some(selected));
+    state
 }
 
 /// The cursor passes over a spacer, which is an option row with no label, and
@@ -556,7 +557,7 @@ pub(crate) fn draw(
     let rows = items.len();
     // Inside a widget box a read-only screen sits in the middle as a block.
     // Outside one the option list becomes the viewport and fills it.
-    let placed = match CHROME.get().is_some() {
+    let placed = match boxed() {
         true => set_in(body, &items, rows),
         false => body,
     };
