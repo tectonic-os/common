@@ -306,11 +306,8 @@ fn sheet(rows: &[(String, String)], action: &str, blocked: Option<&str>) -> Vec<
     options
 }
 
-/// Shows a line as it is typed, with a default standing in until the user types
-/// over it. Enter answers with what is there. Esc answers with nothing, and the
-/// calling command then takes its default or fails and names its flag. `prefix`
-/// stands before the answer and is not part of it.
-pub fn line(question: &str, prefix: &str, default: Option<&str>) -> Result<String, String> {
+/// The calling command must preserve `None`. Esc cancels the operation.
+pub fn line(question: &str, prefix: &str, default: Option<&str>) -> Result<Option<String>, String> {
     inline(3, |terminal| {
         let mut typed = String::new();
         loop {
@@ -319,8 +316,8 @@ pub fn line(question: &str, prefix: &str, default: Option<&str>) -> Result<Strin
             })?;
             let Some(key) = read()? else { continue };
             match key {
-                KeyCode::Enter => return Ok(typed),
-                KeyCode::Esc => return Ok(String::new()),
+                KeyCode::Enter => return Ok(Some(typed)),
+                KeyCode::Esc => return Ok(None),
                 KeyCode::Backspace => {
                     typed.pop();
                 }
@@ -329,6 +326,14 @@ pub fn line(question: &str, prefix: &str, default: Option<&str>) -> Result<Strin
             }
         }
     })
+}
+
+pub fn line_or_empty(
+    question: &str,
+    prefix: &str,
+    default: Option<&str>,
+) -> Result<String, String> {
+    Ok(line(question, prefix, default)?.unwrap_or_default())
 }
 
 /// Draws the default dim where the typed answer will be, because enter takes it.
