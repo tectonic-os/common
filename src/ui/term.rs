@@ -1,5 +1,5 @@
-//! Reports the terminal facts a widget draws against. It measures the console
-//! width, says whether a terminal watches the output, and opens the viewport.
+//! Keeps terminal setup and cleanup in one place, so every widget follows the
+//! same viewport rules.
 
 use crate::ui::choose::*;
 use crate::ui::chrome::*;
@@ -11,12 +11,9 @@ use ratatui::{DefaultTerminal, Frame, TerminalOptions, Viewport};
 use std::io::IsTerminal;
 use std::sync::OnceLock;
 
-/// Assumes this console width when the terminal reports none.
+/// The kernel-VT fallback provides the narrowest supported console width.
 pub(crate) const NARROWEST: usize = 80;
 
-/// Reports whether a terminal watches the drawn output. The calling command uses
-/// it to decide colour. They also use it to decide whether a read-out prints as a table
-/// or as the markdown a file would hold.
 pub(crate) fn colour() -> bool {
     std::io::stdout().is_terminal()
 }
@@ -43,8 +40,8 @@ pub(crate) fn parse_width(width: &str) -> Option<u16> {
     width.parse().ok().filter(|width| *width > 0)
 }
 
-/// Emits the ANSI bold sequence for every kind of stdout. Only the drawn read-out path
-/// calls it, and `Prompt::draws` has already gated that path.
+/// The calling command gates this escape sequence behind `Prompt::draws`, so a
+/// redirected read-out never calls it.
 pub fn bold(text: &str) -> String {
     ratatui::crossterm::style::Stylize::bold(text).to_string()
 }
@@ -133,10 +130,32 @@ pub(crate) fn render<B: Backend>(
     head: &str,
     body: impl FnOnce(&mut Frame, Rect),
 ) -> Result<(), String> {
+    render_with_title(
+        terminal,
+        CHROME.get().map(String::as_str),
+        rows,
+        keys,
+        head,
+        body,
+    )
+}
+
+/// An in-memory terminal takes the title as an argument because concurrent
+/// tests render different command titles.
+pub(crate) fn render_with_title<B: Backend>(
+    terminal: &mut ratatui::Terminal<B>,
+    title: Option<&str>,
+    rows: u16,
+    keys: &str,
+    head: &str,
+    body: impl FnOnce(&mut Frame, Rect),
+) -> Result<(), String> {
     terminal
         .draw(|frame| {
-            let area = chrome(frame, CHROME.get().map(String::as_str), head, rows, keys);
-            body(frame, area);
+            in_frame_box(has_box(title), || {
+                let area = chrome(frame, title, head, rows, keys);
+                body(frame, area);
+            });
         })
         .map(|_| ())
         .map_err(|err| err.to_string())

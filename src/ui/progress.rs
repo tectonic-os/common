@@ -1,6 +1,3 @@
-//! Draws the progress region for an install. It shows a gauge, the running
-//! step, and the tail of the install log.
-
 use crate::ui::chrome::*;
 use crate::ui::term::*;
 use ratatui::crossterm::terminal;
@@ -15,23 +12,17 @@ use ratatui::{DefaultTerminal, Frame};
 /// few screens of log rather than the whole install.
 const LOGGED: usize = 256;
 
-/// Counts the rows the region takes. They are the progress bar, the step line,
-/// the message pane under its rule, and the fixed foot line.
-const ROWS: u16 = 9;
+pub(crate) const ROWS: u16 = 9;
 
-/// Holds a bounded region over work that takes a while. It stays open across
-/// fisherman's event stream, which is why it is a handle. Every other widget in
-/// this crate is a closure.
+/// The progress region stays open across fisherman's event stream, so it needs
+/// a persistent terminal handle.
 pub struct Progress {
     terminal: DefaultTerminal,
-    /// Holds the install percentage finished before the step now running.
     pct: u16,
-    /// Holds the share of the whole install the running step carries.
     flight: u16,
     /// Counts the log messages that arrived during the running step. They are the
     /// only signal for how far into that step the machine has got.
     within: u32,
-    /// Names the spinner frame now drawn.
     turn: usize,
     step: String,
     notes: Vec<String>,
@@ -70,8 +61,6 @@ impl Progress {
         self.show()
     }
 
-    /// Gives how far along the whole install the progress bar is drawn.
-    ///
     /// fisherman reports what a step weighs and never how far into it the machine
     /// has got, and one step carries most of the weight. Each log message during a
     /// step takes a fixed share of what is left of that step, so the percentage
@@ -109,10 +98,7 @@ impl Progress {
         );
         // Inside the widget box the top border carries the step and the spinner.
         // Inline there is no border, and `working` draws the step line itself.
-        let head = match CHROME.get().is_some() && !step.is_empty() {
-            true => step_line(turn, step),
-            false => String::new(),
-        };
+        let head = progress_head(turn, step);
         render(&mut self.terminal, ROWS, foot, &head, |frame, area| {
             working(frame, area, pct, turn, step, notes, foot)
         })
@@ -120,6 +106,13 @@ impl Progress {
 
     pub fn close(self) {
         close(self.terminal);
+    }
+}
+
+pub(crate) fn progress_head(turn: usize, step: &str) -> String {
+    match boxed() && !step.is_empty() {
+        true => step_line(turn, step),
+        false => String::new(),
     }
 }
 
@@ -149,7 +142,7 @@ pub(crate) fn working(
     // Inline there is no border, so the spinner and the step draw here. Inside the
     // widget box the top border carries them, and this row stays the one blank
     // line between the progress bar and the message pane.
-    if CHROME.get().is_none() {
+    if !boxed() {
         frame.render_widget(
             Line::from(vec![
                 Span::styled(TURNING[turn % TURNING.len()], Style::new().fg(HIGHLIGHT)),
@@ -177,9 +170,8 @@ pub(crate) const HOT: (u8, u8, u8) = (0xee, 0x6f, 0xf8);
 /// weight for each log message that arrived during it. Held out of `Progress` so
 /// a test can read it without a terminal.
 pub(crate) fn crept(pct: u16, flight: u16, within: u32) -> u16 {
-    // The `install OS` step copies a blob per image layer and there are dozens,
-    // so each message's share must stay small enough that a hundred of them do
-    // not run out of bar.
+    // Each image layer emits a message, so a fixed increment could exhaust the
+    // step before the copy finishes.
     let left = HELD.powi(within.min(400) as i32);
     pct + (f64::from(flight) * (1.0 - left)) as u16
 }

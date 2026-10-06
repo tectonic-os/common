@@ -1,10 +1,10 @@
-//! Draws the terminal widgets the `tect` CLI and the bootc installer share.
-//!
-//! ratatui appears in this crate only. A widget draws in a bounded region of the
-//! normal terminal scroll. No widget enters an alternate screen. The calling
-//! command must find a terminal before it draws.
+//! Keeps ratatui inside the shared crate. Widgets use bounded regions of the
+//! normal terminal scroll and never enter an alternate screen. The calling
+//! command must find a terminal before drawing.
 
 pub mod table;
+#[cfg(feature = "test-support")]
+pub mod testing;
 pub mod tree;
 
 pub(crate) const PICK: &str = "up and down to move, enter to choose, esc cancels";
