@@ -418,6 +418,197 @@ mod tests {
             .collect()
     }
 
+    fn scripted(answers: &[&str]) -> Prompt {
+        Prompt::scripted(answers.iter().map(|answer| answer.to_string()).collect())
+    }
+
+    #[test]
+    fn a_silent_prompt_takes_a_given_answer() {
+        assert_eq!(
+            Prompt::silent().text(
+                Some("given".into()),
+                "Question?",
+                "--answer",
+                Some("default")
+            ),
+            Ok("given".into())
+        );
+    }
+
+    #[test]
+    fn a_silent_prompt_takes_its_default() {
+        assert_eq!(
+            Prompt::silent().text(None, "Question?", "--answer", Some("default")),
+            Ok("default".into())
+        );
+    }
+
+    #[test]
+    fn a_silent_prompt_names_the_flag_for_an_answer_it_lacks() {
+        let prompt = Prompt::silent();
+        let error = prompt
+            .line(None, "Question:", "--answer", "prefix: ", None)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            "give --answer, since nothing can be asked here: Question"
+        );
+    }
+
+    #[test]
+    fn a_silent_prompt_neither_asks_nor_draws() {
+        let prompt = Prompt::silent();
+        assert!(!prompt.asks());
+        assert!(!prompt.draws());
+    }
+
+    #[test]
+    fn a_scripted_prompt_trims_an_answer() {
+        assert_eq!(
+            scripted(&["  answer  "]).text(None, "Question?", "--answer", None),
+            Ok("answer".into())
+        );
+    }
+
+    #[test]
+    fn a_scripted_prompt_fails_when_the_script_ends() {
+        assert_eq!(
+            scripted(&[]).text(None, "Second?", "--second", None),
+            Err("nothing left in TECT_ANSWERS to answer `Second?` with".into())
+        );
+    }
+
+    #[test]
+    fn a_scripted_prompt_asks_without_drawing() {
+        let prompt = scripted(&[]);
+        assert!(prompt.asks());
+        assert!(!prompt.draws());
+    }
+
+    #[test]
+    fn an_empty_scripted_answer_takes_the_default() {
+        assert_eq!(
+            scripted(&[""]).text(None, "Question?", "--answer", Some("default")),
+            Ok("default".into())
+        );
+    }
+
+    #[test]
+    fn a_silent_confirmation_declines_a_new_answer() {
+        assert_eq!(Prompt::silent().confirm("Change?", "Yes", "No"), Ok(false));
+    }
+
+    #[test]
+    fn a_silent_confirmation_keeps_the_current_answer() {
+        assert_eq!(
+            Prompt::silent().confirm_current("Change?", "Yes", "No", true),
+            Ok(true)
+        );
+    }
+
+    #[test]
+    fn scripted_confirmations_take_an_empty_answer_as_the_current_one() {
+        assert_eq!(
+            scripted(&[""]).confirm_current("Change?", "Yes", "No", false),
+            Ok(false)
+        );
+    }
+
+    #[test]
+    fn scripted_confirmations_match_the_first_letter_of_the_no_answer() {
+        assert_eq!(
+            scripted(&["never"]).confirm("Change?", "Always", "Never"),
+            Ok(false)
+        );
+        assert_eq!(
+            scripted(&["anything else"]).confirm("Change?", "Always", "Never"),
+            Ok(true)
+        );
+    }
+
+    #[test]
+    fn a_scripted_picker_accepts_a_number_a_label_and_zero() {
+        let options = options(3);
+        assert_eq!(scripted(&["2"]).choose("Choose?", &options), Ok(Some(1)));
+        assert_eq!(
+            scripted(&["rule 2"]).choose("Choose?", &options),
+            Ok(Some(2))
+        );
+        assert_eq!(scripted(&["0"]).choose("Choose?", &options), Ok(None));
+    }
+
+    #[test]
+    fn a_scripted_picker_keeps_a_current_answer_on_an_empty_line() {
+        let options = options(3);
+        assert_eq!(
+            scripted(&[""]).choose_current("Choose?", &options, 2),
+            Ok(Some(2))
+        );
+    }
+
+    #[test]
+    fn a_scripted_picker_refuses_an_answer_outside_its_options() {
+        assert_eq!(
+            scripted(&["4"]).choose("Choose?", &options(3)),
+            Err("`4` is not one of them".into())
+        );
+    }
+
+    #[test]
+    fn a_silent_picker_with_no_current_answer_chooses_nothing() {
+        assert_eq!(Prompt::silent().choose("Choose?", &options(3)), Ok(None));
+    }
+
+    #[test]
+    fn a_silent_picker_keeps_its_current_answer() {
+        assert_eq!(
+            Prompt::silent().choose_current("Choose?", &options(3), 1),
+            Ok(Some(1))
+        );
+    }
+
+    #[test]
+    fn a_scripted_multi_picker_accepts_numbers_and_labels_once_each() {
+        let options = ["first", "second", "third"]
+            .map(|label| Choice::new(label, ""))
+            .to_vec();
+        let Answer::Chosen(chosen) = scripted(&["1, third 1"])
+            .choose_many("Choose?", &options, &[])
+            .unwrap()
+        else {
+            panic!("a scripted answer cannot cancel");
+        };
+        assert_eq!(chosen, vec![0, 2]);
+    }
+
+    #[test]
+    fn zero_clears_a_scripted_multi_picker() {
+        let Answer::Chosen(chosen) = scripted(&["0"])
+            .choose_many("Choose?", &options(3), &[1])
+            .unwrap()
+        else {
+            panic!("a scripted answer cannot cancel");
+        };
+        assert!(chosen.is_empty());
+    }
+
+    #[test]
+    fn a_silent_multi_picker_keeps_its_current_answers() {
+        let Answer::Chosen(chosen) = Prompt::silent()
+            .choose_many("Choose?", &options(3), &[0, 2])
+            .unwrap()
+        else {
+            panic!("a silent answer cannot cancel");
+        };
+        assert_eq!(chosen, vec![0, 2]);
+    }
+
+    #[test]
+    fn the_cancelled_sentinel_is_not_a_user_facing_error() {
+        assert!(cancelled(CANCELLED));
+        assert!(!cancelled("cancelled"));
+    }
+
     #[test]
     fn a_short_answer_reads_back_as_itself_and_a_long_one_as_a_count() {
         let options = options(20);
