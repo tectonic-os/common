@@ -1,11 +1,26 @@
-//! Just enough JSON to write the plan.
+use serde::de::{MapAccess, SeqAccess, Visitor};
+use serde::ser::{SerializeMap, SerializeSeq};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::fmt;
 
-use std::fmt::Write as _;
+pub struct Number(serde_json::Number);
+
+impl Number {
+    pub fn as_u32(&self) -> Option<u32> {
+        self.0.as_u64().and_then(|value| u32::try_from(value).ok())
+    }
+}
+
+impl fmt::Display for Number {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
 
 pub enum Json {
     Null,
     Bool(bool),
-    Number(u32),
+    Number(Number),
     String(String),
     Array(Vec<Json>),
     Object(Vec<(String, Json)>),
@@ -16,9 +31,11 @@ impl Json {
         Json::String(value.into())
     }
 
-    /// An absent value as null, so every object of a given kind has the same
-    /// shape and a reader never has to tell "not declared" from "misspelled the
-    /// key".
+    pub fn number(value: u32) -> Self {
+        Json::Number(Number(value.into()))
+    }
+
+    /// Null preserves the rendered shape when an optional field has no value.
     pub fn optional(value: Option<impl Into<String>>) -> Self {
         match value {
             Some(value) => Json::String(value.into()),
@@ -43,339 +60,130 @@ impl Json {
         )
     }
 
-    /// An object whose keys come out of the data: a path to the module that
-    /// owns it, an option name to its value.
     pub fn map(entries: impl IntoIterator<Item = (String, Json)>) -> Self {
         Json::Object(entries.into_iter().collect())
     }
 
     pub fn parse(text: &str) -> Result<Json, String> {
-        let mut parser = Parser {
-            bytes: text.as_bytes(),
-            pos: 0,
-        };
-        parser.skip();
-        let value = parser.value(0)?;
-        parser.skip();
-        if parser.pos != parser.bytes.len() {
-            return Err(parser.error("trailing content"));
-        }
-        Ok(value)
+        serde_json::from_str(text).map_err(|error| error.to_string())
     }
 
     pub fn render(&self) -> String {
-        let mut out = String::new();
-        self.write(&mut out, 0);
-        out.push('\n');
-        out
+        let mut rendered =
+            serde_json::to_string_pretty(self).expect("the JSON value model always serialises");
+        rendered.push('\n');
+        rendered
     }
+}
 
-    fn write(&self, out: &mut String, depth: usize) {
-        let pad = "  ".repeat(depth + 1);
-        let close = "  ".repeat(depth);
+impl Serialize for Json {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
         match self {
-            Json::Null => out.push_str("null"),
-            Json::Bool(value) => out.push_str(if *value { "true" } else { "false" }),
-            Json::Number(value) => {
-                let _ = write!(out, "{value}");
-            }
-            Json::String(value) => escape(value, out),
-            Json::Array(items) if items.is_empty() => out.push_str("[]"),
+            Json::Null => serializer.serialize_none(),
+            Json::Bool(value) => serializer.serialize_bool(*value),
+            Json::Number(value) => value.0.serialize(serializer),
+            Json::String(value) => serializer.serialize_str(value),
             Json::Array(items) => {
-                out.push_str("[\n");
-                for (index, item) in items.iter().enumerate() {
-                    out.push_str(&pad);
-                    item.write(out, depth + 1);
-                    out.push_str(if index + 1 == items.len() {
-                        "\n"
-                    } else {
-                        ",\n"
-                    });
+                let mut sequence = serializer.serialize_seq(Some(items.len()))?;
+                for item in items {
+                    sequence.serialize_element(item)?;
                 }
-                out.push_str(&close);
-                out.push(']');
+                sequence.end()
             }
-            Json::Object(fields) if fields.is_empty() => out.push_str("{}"),
             Json::Object(fields) => {
-                out.push_str("{\n");
-                for (index, (name, value)) in fields.iter().enumerate() {
-                    out.push_str(&pad);
-                    escape(name, out);
-                    out.push_str(": ");
-                    value.write(out, depth + 1);
-                    out.push_str(if index + 1 == fields.len() {
-                        "\n"
-                    } else {
-                        ",\n"
-                    });
+                let mut map = serializer.serialize_map(Some(fields.len()))?;
+                for (name, value) in fields {
+                    map.serialize_entry(name, value)?;
                 }
-                out.push_str(&close);
-                out.push('}');
+                map.end()
             }
         }
     }
 }
 
-/// Nothing here is trusted to be printable: a description, an option value and
-/// a module path all come out of a file somebody else wrote.
-fn escape(value: &str, out: &mut String) {
-    out.push('"');
-    for c in value.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            '\u{08}' => out.push_str("\\b"),
-            '\u{0c}' => out.push_str("\\f"),
-            c if (c as u32) < 0x20 => {
-                let _ = write!(out, "\\u{:04x}", c as u32);
+impl<'de> Deserialize<'de> for Json {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct JsonVisitor;
+
+        impl<'de> Visitor<'de> for JsonVisitor {
+            type Value = Json;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a JSON value")
             }
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-}
 
-/// How far a document may nest before it is refused.
-const MAX_DEPTH: usize = 128;
+            fn visit_unit<E>(self) -> Result<Json, E> {
+                Ok(Json::Null)
+            }
 
-/// A byte cursor: positions are byte offsets, which is what an error reports.
-struct Parser<'a> {
-    bytes: &'a [u8],
-    pos: usize,
-}
+            fn visit_bool<E>(self, value: bool) -> Result<Json, E> {
+                Ok(Json::Bool(value))
+            }
 
-impl Parser<'_> {
-    fn error(&self, message: &str) -> String {
-        format!("{message} at byte {}", self.pos)
-    }
+            fn visit_i64<E>(self, value: i64) -> Result<Json, E> {
+                Ok(Json::Number(Number(value.into())))
+            }
 
-    fn skip(&mut self) {
-        while matches!(self.bytes.get(self.pos), Some(b' ' | b'\t' | b'\n' | b'\r')) {
-            self.pos += 1;
-        }
-    }
+            fn visit_u64<E>(self, value: u64) -> Result<Json, E> {
+                Ok(Json::Number(Number(value.into())))
+            }
 
-    fn value(&mut self, depth: usize) -> Result<Json, String> {
-        if depth > MAX_DEPTH {
-            return Err(self.error("nesting too deep"));
-        }
-        match self.bytes.get(self.pos) {
-            None => Err(self.error("expected a value")),
-            Some(b'n') => self.literal(b"null", Json::Null),
-            Some(b't') => self.literal(b"true", Json::Bool(true)),
-            Some(b'f') => self.literal(b"false", Json::Bool(false)),
-            Some(b'"') => self.string().map(Json::String),
-            Some(b'[') => self.array(depth),
-            Some(b'{') => self.object(depth),
-            Some(b'0'..=b'9') => self.number().map(Json::Number),
-            _ => Err(self.error("expected a value")),
-        }
-    }
+            fn visit_f64<E>(self, value: f64) -> Result<Json, E>
+            where
+                E: serde::de::Error,
+            {
+                let value = serde_json::Number::from_f64(value)
+                    .ok_or_else(|| E::custom("expected a finite JSON number"))?;
+                Ok(Json::Number(Number(value)))
+            }
 
-    fn literal(&mut self, word: &[u8], value: Json) -> Result<Json, String> {
-        if self.bytes[self.pos..].starts_with(word) {
-            self.pos += word.len();
-            Ok(value)
-        } else {
-            Err(self.error("expected a value"))
-        }
-    }
+            fn visit_str<E>(self, value: &str) -> Result<Json, E> {
+                Ok(Json::String(value.to_string()))
+            }
 
-    /// Unsigned integers only: a leading digit, then digits, then a terminator.
-    fn number(&mut self) -> Result<u32, String> {
-        let mut value: u32 = 0;
-        while let Some(byte) = self.bytes.get(self.pos) {
-            match byte {
-                b'0'..=b'9' => {
-                    value = value
-                        .checked_mul(10)
-                        .and_then(|v| v.checked_add((byte - b'0') as u32))
-                        .ok_or_else(|| self.error("number too large"))?;
-                    self.pos += 1;
+            fn visit_string<E>(self, value: String) -> Result<Json, E> {
+                Ok(Json::String(value))
+            }
+
+            fn visit_seq<A>(self, mut sequence: A) -> Result<Json, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let mut items = Vec::new();
+                while let Some(item) = sequence.next_element()? {
+                    items.push(item);
                 }
-                b'.' | b'e' | b'E' => return Err(self.error("expected a digit")),
-                _ => break,
+                Ok(Json::Array(items))
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Json, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut fields = Vec::new();
+                while let Some(field) = map.next_entry()? {
+                    fields.push(field);
+                }
+                Ok(Json::Object(fields))
             }
         }
-        Ok(value)
-    }
 
-    fn string(&mut self) -> Result<String, String> {
-        self.pos += 1;
-        let mut out = String::new();
-        loop {
-            match self.bytes.get(self.pos) {
-                None => return Err(self.error("unterminated string")),
-                Some(b'"') => {
-                    self.pos += 1;
-                    return Ok(out);
-                }
-                Some(b'\\') => {
-                    self.pos += 1;
-                    let escaped = *self
-                        .bytes
-                        .get(self.pos)
-                        .ok_or_else(|| self.error("unterminated string"))?;
-                    self.pos += 1;
-                    match escaped {
-                        b'"' => out.push('"'),
-                        b'\\' => out.push('\\'),
-                        b'/' => out.push('/'),
-                        b'b' => out.push('\u{08}'),
-                        b'f' => out.push('\u{0c}'),
-                        b'n' => out.push('\n'),
-                        b'r' => out.push('\r'),
-                        b't' => out.push('\t'),
-                        b'u' => out.push(self.escape()?),
-                        _ => return Err(self.error("invalid escape")),
-                    }
-                }
-                Some(_) => {
-                    let rest = &self.bytes[self.pos..];
-                    let c = rest[0] as char;
-                    if c.is_ascii() && (c as u8) < 0x20 {
-                        return Err(self.error("invalid character in string"));
-                    }
-                    let width = utf8_width(rest[0]).min(rest.len());
-                    let c = std::str::from_utf8(&rest[..width])
-                        .map_err(|_| self.error("invalid utf-8"))?
-                        .chars()
-                        .next()
-                        .unwrap();
-                    out.push(c);
-                    self.pos += width;
-                }
-            }
-        }
-    }
-
-    /// One `\uXXXX`, including the half of a surrogate pair it belongs to.
-    fn escape(&mut self) -> Result<char, String> {
-        let code = self.hex4()?;
-        if !(0xD800..=0xDBFF).contains(&code) {
-            if (0xDC00..=0xDFFF).contains(&code) {
-                return Err(self.error("invalid surrogate pair"));
-            }
-            return char::from_u32(code).ok_or_else(|| self.error("invalid unicode escape"));
-        }
-        if self.bytes.get(self.pos) != Some(&b'\\') || self.bytes.get(self.pos + 1) != Some(&b'u') {
-            return Err(self.error("invalid surrogate pair"));
-        }
-        self.pos += 2;
-        let low = self.hex4()?;
-        if !(0xDC00..=0xDFFF).contains(&low) {
-            return Err(self.error("invalid surrogate pair"));
-        }
-        Ok(char::from_u32(0x1_0000 + ((code - 0xD800) << 10) + (low - 0xDC00)).unwrap())
-    }
-
-    fn hex4(&mut self) -> Result<u32, String> {
-        let mut code: u32 = 0;
-        for _ in 0..4 {
-            let digit = self
-                .bytes
-                .get(self.pos)
-                .copied()
-                .and_then(hex_value)
-                .ok_or_else(|| self.error("invalid unicode escape"))?;
-            self.pos += 1;
-            code = code * 16 + digit as u32;
-        }
-        Ok(code)
-    }
-
-    fn array(&mut self, depth: usize) -> Result<Json, String> {
-        self.pos += 1;
-        self.skip();
-        if self.bytes.get(self.pos) == Some(&b']') {
-            self.pos += 1;
-            return Ok(Json::Array(Vec::new()));
-        }
-        let mut items = Vec::new();
-        loop {
-            items.push(self.value(depth + 1)?);
-            self.skip();
-            match self.bytes.get(self.pos) {
-                Some(b',') => {
-                    self.pos += 1;
-                    self.skip();
-                }
-                Some(b']') => {
-                    self.pos += 1;
-                    return Ok(Json::Array(items));
-                }
-                _ => return Err(self.error("expected ',' or ']'")),
-            }
-        }
-    }
-
-    fn object(&mut self, depth: usize) -> Result<Json, String> {
-        self.pos += 1;
-        self.skip();
-        if self.bytes.get(self.pos) == Some(&b'}') {
-            self.pos += 1;
-            return Ok(Json::Object(Vec::new()));
-        }
-        let mut fields = Vec::new();
-        loop {
-            if self.bytes.get(self.pos) != Some(&b'"') {
-                return Err(self.error("expected a string key"));
-            }
-            let key = self.string()?;
-            self.skip();
-            if self.bytes.get(self.pos) != Some(&b':') {
-                return Err(self.error("expected ':'"));
-            }
-            self.pos += 1;
-            self.skip();
-            let value = self.value(depth + 1)?;
-            fields.push((key, value));
-            self.skip();
-            match self.bytes.get(self.pos) {
-                Some(b',') => {
-                    self.pos += 1;
-                    self.skip();
-                }
-                Some(b'}') => {
-                    self.pos += 1;
-                    return Ok(Json::Object(fields));
-                }
-                _ => return Err(self.error("expected ',' or '}'")),
-            }
-        }
+        deserializer.deserialize_any(JsonVisitor)
     }
 }
 
-fn hex_value(byte: u8) -> Option<u8> {
-    match byte {
-        b'0'..=b'9' => Some(byte - b'0'),
-        b'a'..=b'f' => Some(byte - b'a' + 10),
-        b'A'..=b'F' => Some(byte - b'A' + 10),
-        _ => None,
-    }
-}
-
-fn utf8_width(byte: u8) -> usize {
-    match byte {
-        0x00..=0x7F => 1,
-        0xC0..=0xDF => 2,
-        0xE0..=0xEF => 3,
-        _ => 4,
-    }
-}
-
-/// Reading a document back, which the manifest and the build record an image
-/// carries are the only cases of: everything else here writes one.
-/// An explicit `null` reads as absent, the way `Json::optional` writes one.
+/// Optional-field readers treat explicit null and absence alike.
 pub fn field<'a>(value: &'a Json, key: &str) -> Option<&'a Json> {
     declared(value, key).filter(|v| !matches!(v, Json::Null))
 }
 
-/// The value a key holds, `null` included, for the reader that has to tell a
-/// key written as `null` from one never written.
+/// Required-field checks use this accessor to distinguish explicit null from absence.
 pub fn declared<'a>(value: &'a Json, key: &str) -> Option<&'a Json> {
     match value {
         Json::Object(fields) => fields.iter().find(|(name, _)| name == key).map(|(_, v)| v),
@@ -392,7 +200,7 @@ pub fn text(value: &Json, key: &str) -> Option<String> {
 
 pub fn number(value: &Json, key: &str) -> Option<u32> {
     match field(value, key) {
-        Some(Json::Number(found)) => Some(*found),
+        Some(Json::Number(found)) => found.as_u32(),
         _ => None,
     }
 }
@@ -416,15 +224,94 @@ pub fn strings(value: &Json, key: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{field, Json};
+    use super::*;
 
-    /// A key written as `null` and a key never written read the same, so an
-    /// `if let … else` over one does not take the wrong branch.
     #[test]
     fn an_explicit_null_is_absent() {
         let doc = Json::parse(r#"{"imported": null, "source": "one"}"#).unwrap();
         assert!(field(&doc, "imported").is_none());
         assert!(field(&doc, "missing").is_none());
         assert!(field(&doc, "source").is_some());
+    }
+
+    #[test]
+    fn valid_number_forms_reach_their_consumers() {
+        for text in ["-1", "1.5", "4294967296", "18446744073709551615"] {
+            let Json::Number(number) = Json::parse(text).unwrap() else {
+                panic!("{text} did not parse as a number");
+            };
+            assert_eq!(number.to_string(), text);
+        }
+    }
+
+    #[test]
+    fn an_unsigned_32_bit_field_rejects_other_number_forms() {
+        for text in ["-1", "1.5", "4294967296"] {
+            let doc = Json::parse(&format!(r#"{{"value":{text}}}"#)).unwrap();
+            assert_eq!(number(&doc, "value"), None, "{text}");
+        }
+        let doc = Json::parse(r#"{"value":4294967295}"#).unwrap();
+        assert_eq!(number(&doc, "value"), Some(u32::MAX));
+    }
+
+    #[test]
+    fn escapes_and_surrogate_pairs_read_as_text() {
+        let doc = Json::parse(
+            r#"{"text":"quote \" slash \\ line\n return\r tab\t back\b form\f solidus\/ nul\u0000 pair\uD83D\uDE00"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            text(&doc, "text").as_deref(),
+            Some(
+                "quote \" slash \\ line\n return\r tab\t back\u{8} form\u{c} solidus/ nul\0 pair😀"
+            )
+        );
+        for text in [r#""\uD83D""#, r#""\uDE00""#] {
+            assert!(Json::parse(text).is_err(), "{text}");
+        }
+    }
+
+    #[test]
+    fn object_order_and_the_trailing_newline_are_stable() {
+        let doc = Json::parse(r#"{"second":2,"first":1}"#).unwrap();
+        assert_eq!(doc.render(), "{\n  \"second\": 2,\n  \"first\": 1\n}\n");
+    }
+
+    #[test]
+    fn duplicate_object_fields_remain_for_the_consumer() {
+        let doc = Json::parse(r#"{"value":1,"value":2}"#).unwrap();
+        let Json::Object(fields) = &doc else {
+            panic!("the document is an object");
+        };
+        assert_eq!(fields.len(), 2);
+        assert_eq!(number(&doc, "value"), Some(1));
+        assert_eq!(doc.render(), "{\n  \"value\": 1,\n  \"value\": 2\n}\n");
+    }
+
+    #[test]
+    fn every_value_round_trips_through_the_rendered_document() {
+        let doc = Json::object([
+            ("none", Json::Null),
+            ("yes", Json::Bool(true)),
+            ("number", Json::number(7)),
+            ("text", Json::string("line\nquote\"")),
+            ("list", Json::array([Json::number(1), Json::number(2)])),
+            ("object", Json::object([("inside", Json::Bool(false))])),
+        ]);
+        let rendered = doc.render();
+        assert_eq!(Json::parse(&rendered).unwrap().render(), rendered);
+    }
+
+    #[test]
+    fn trailing_content_is_refused() {
+        assert!(Json::parse("null true").is_err());
+    }
+
+    #[test]
+    fn nesting_has_a_fixed_limit() {
+        let accepted = format!("{}0{}", "[".repeat(127), "]".repeat(127));
+        let refused = format!("{}0{}", "[".repeat(128), "]".repeat(128));
+        assert!(Json::parse(&accepted).is_ok());
+        assert!(Json::parse(&refused).is_err());
     }
 }
