@@ -15,3 +15,5 @@ test-support = []
 [dependencies]
 libc = "0.2"
 ratatui = { version = "0.30.2", default-features = false, features = ["crossterm"] }
+serde = "1.0.228"
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
