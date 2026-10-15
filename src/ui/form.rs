@@ -168,6 +168,10 @@ impl Field {
         Self::Gap
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each parameter fills one field of `Field::Table`"
+    )]
     pub fn table(
         label: &str,
         column: &str,
@@ -387,6 +391,10 @@ pub fn opens_at(shown: &[usize], field: usize) -> usize {
 /// `blocked` is asked on every draw, because it judges the fields edited on this
 /// form. A reason computed before the loop would leave the button dim however
 /// complete the answers become.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is distinct form state that the calling command owns"
+)]
 pub fn form(
     fields: &mut [Field],
     actions: &[&str],
