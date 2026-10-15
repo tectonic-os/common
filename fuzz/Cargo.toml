@@ -1,0 +1,34 @@
+[package]
+name = "common-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+license = "Apache-2.0"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.common]
+path = ".."
+features = ["fuzzing"]
+
+# Use independent workspace for fuzzers
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "json"
+path = "fuzz_targets/json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "prompt_answers"
+path = "fuzz_targets/prompt_answers.rs"
+test = false
+doc = false
+bench = false

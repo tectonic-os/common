@@ -10,6 +10,7 @@ publish = false
 description = "The components every Tectonic command and the bootc installer share"
 
 [features]
+fuzzing = []
 test-support = []
 
 [dependencies]

@@ -249,11 +249,7 @@ impl Prompt {
         }
         let question = format!("{} ({yes}/{no})", stem(question));
         let answer = self.read(&question, &format!("{question}\n"))?;
-        if answer.is_empty() {
-            return Ok(Some(current));
-        }
-        let first = |word: &str| word.chars().next().map(|c| c.to_ascii_lowercase());
-        Ok(Some(first(&answer) != first(no)))
+        Ok(Some(confirmation(&answer, no, current)))
     }
 
     /// One of a set, or none of them: an inline select list where the output is
@@ -296,18 +292,7 @@ impl Prompt {
         self.numbered(options, current.as_slice());
         let question = format!("{} [{}, 0 for none]", stem(question), range(options));
         let answer = self.read(&question, &format!("{question}: "))?;
-        if let (true, Some(current)) = (answer.is_empty(), current) {
-            return Ok(Some(current));
-        }
-        match answer.parse::<usize>() {
-            Ok(0) => Ok(None),
-            Ok(number) if number <= options.len() => Ok(Some(number - 1)),
-            _ => options
-                .iter()
-                .position(|option| option.label == answer)
-                .map(Some)
-                .ok_or_else(|| format!("`{answer}` is not one of them")),
-        }
+        one_answer(&answer, options, current)
     }
 
     /// Any of a set, or none of them: an inline multi-select where the output
@@ -342,25 +327,7 @@ impl Prompt {
             range(options)
         );
         let answer = self.read(&question, &format!("{question}: "))?;
-        if answer.is_empty() {
-            return Ok(Answer::Chosen(on.to_vec()));
-        }
-
-        let mut chosen: Vec<usize> = Vec::new();
-        for word in answer.split([' ', ',']).filter(|word| !word.is_empty()) {
-            let at = match word.parse::<usize>() {
-                Ok(0) => return Ok(Answer::Chosen(Vec::new())),
-                Ok(number) if number <= options.len() => number - 1,
-                _ => options
-                    .iter()
-                    .position(|option| option.label == word)
-                    .ok_or_else(|| format!("`{word}` is not one of them"))?,
-            };
-            if !chosen.contains(&at) {
-                chosen.push(at);
-            }
-        }
-        Ok(Answer::Chosen(chosen))
+        many_answer(&answer, options, on)
     }
 
     /// `on` marks what is already true, and marks nothing for a question that
@@ -374,6 +341,79 @@ impl Prompt {
             };
             let line = format!("{mark}{}  {}", option.label, option.detail);
             println!("  {}) {}", index + 1, line.trim_end());
+        }
+    }
+}
+
+fn confirmation(answer: &str, no: &str, current: bool) -> bool {
+    if answer.is_empty() {
+        return current;
+    }
+    let first = |word: &str| word.chars().next().map(|c| c.to_ascii_lowercase());
+    first(answer) != first(no)
+}
+
+fn one_answer(
+    answer: &str,
+    options: &[Choice],
+    current: Option<usize>,
+) -> Result<Option<usize>, String> {
+    if let (true, Some(current)) = (answer.is_empty(), current) {
+        return Ok(Some(current));
+    }
+    match answer.parse::<usize>() {
+        Ok(0) => Ok(None),
+        Ok(number) if number <= options.len() => Ok(Some(number - 1)),
+        _ => options
+            .iter()
+            .position(|option| option.label == answer)
+            .map(Some)
+            .ok_or_else(|| format!("`{answer}` is not one of them")),
+    }
+}
+
+fn many_answer(answer: &str, options: &[Choice], on: &[usize]) -> Result<Answer, String> {
+    if answer.is_empty() {
+        return Ok(Answer::Chosen(on.to_vec()));
+    }
+    let mut chosen: Vec<usize> = Vec::new();
+    for word in answer.split([' ', ',']).filter(|word| !word.is_empty()) {
+        let at = match word.parse::<usize>() {
+            Ok(0) => return Ok(Answer::Chosen(Vec::new())),
+            Ok(number) if number <= options.len() => number - 1,
+            _ => options
+                .iter()
+                .position(|option| option.label == word)
+                .ok_or_else(|| format!("`{word}` is not one of them"))?,
+        };
+        if !chosen.contains(&at) {
+            chosen.push(at);
+        }
+    }
+    Ok(Answer::Chosen(chosen))
+}
+
+#[cfg(feature = "fuzzing")]
+pub fn fuzz_answer(kind: u8, answers: &str) {
+    let options = [
+        Choice::new("one", "first"),
+        Choice::new("two", "second"),
+        Choice::new("three", "third"),
+    ];
+    for answer in answers.lines().map(str::trim) {
+        match kind % 4 {
+            0 => {
+                let _ = answer.to_string();
+            }
+            1 => {
+                let _ = confirmation(answer, "no", false);
+            }
+            2 => {
+                let _ = one_answer(answer, &options, Some(1));
+            }
+            _ => {
+                let _ = many_answer(answer, &options, &[1]);
+            }
         }
     }
 }
