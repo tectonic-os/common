@@ -38,7 +38,10 @@ impl Progress {
     /// region held over an hour of work that can hang must stay interruptible.
     pub fn open(foot: &str) -> Result<Self, String> {
         let terminal = open(ROWS)?;
-        let _ = terminal::disable_raw_mode();
+        if let Err(err) = terminal::disable_raw_mode() {
+            close(terminal);
+            return Err(format!("the terminal could not leave raw mode: {err}"));
+        }
         Ok(Self {
             terminal,
             pct: 0,
@@ -169,6 +172,10 @@ pub(crate) const HOT: (u8, u8, u8) = (0xee, 0x6f, 0xf8);
 /// Adds the install percentage finished before this step to a share of the step
 /// weight for each log message that arrived during it. Held out of `Progress` so
 /// a test can read it without a terminal.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "`left` lies in (0, 1], so the share stays below `flight`"
+)]
 pub(crate) fn crept(pct: u16, flight: u16, within: u32) -> u16 {
     // Each image layer emits a message, so a fixed increment could exhaust the
     // step before the copy finishes.
@@ -214,6 +221,10 @@ pub(crate) fn step_line(turn: usize, step: &str) -> String {
     format!("{} {step}", TURNING[turn % TURNING.len()])
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "every calling command passes `at` below `room`, so each channel stays between its cold and hot value"
+)]
 pub(crate) fn blend(at: usize, room: usize) -> Color {
     let step = |cold: u8, hot: u8| {
         let (cold, hot) = (i32::from(cold), i32::from(hot));

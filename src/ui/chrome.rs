@@ -21,10 +21,10 @@ pub(crate) const WIDEST: u16 = 92;
 
 /// The calling command wraps panel prose to the narrowest supported console,
 /// even when the widget box is wider.
-pub const PANEL_ROOM: usize = (if WIDEST < NARROWEST as u16 {
+pub const PANEL_ROOM: usize = (if WIDEST < NARROWEST {
     WIDEST
 } else {
-    NARROWEST as u16
+    NARROWEST
 } - 2
     - 2 * PAD_X) as usize;
 
@@ -279,6 +279,6 @@ pub(crate) fn centred(area: Rect, width: u16, height: u16) -> Rect {
 /// already holds its cursor column, and its own rows where the widget box has
 /// them to give.
 pub(crate) fn set_in(body: Rect, items: &[ListItem], rows: usize) -> Rect {
-    let width = items.iter().map(ListItem::width).max().unwrap_or(0) as u16;
-    centred(body, width, rows.min(usize::from(body.height)) as u16)
+    let width = to_cells(items.iter().map(ListItem::width).max().unwrap_or(0));
+    centred(body, width, to_cells(rows.min(usize::from(body.height))))
 }

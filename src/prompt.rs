@@ -36,7 +36,12 @@ pub struct Prompt {
 impl Prompt {
     pub fn new(no_tui: bool) -> Self {
         if let Some(path) = std::env::var_os(SCRIPT) {
-            let text = std::fs::read_to_string(path).unwrap_or_default();
+            // An unreadable script still runs with no answers, so the first
+            // question fails, and the user is told why it had none.
+            let text = std::fs::read_to_string(&path).unwrap_or_else(|err| {
+                eprintln!("{SCRIPT}: {}: {err}", std::path::Path::new(&path).display());
+                String::new()
+            });
             return Self::scripted(text.lines().map(str::to_string).collect());
         }
         let ask = !no_tui && std::io::stdin().is_terminal();
@@ -157,7 +162,7 @@ impl Prompt {
             return missing().map(Some);
         }
         if self.draw {
-            return self.written_answer(question, prefix.unwrap_or(""), default, missing);
+            return Self::written_answer(question, prefix.unwrap_or(""), default, missing);
         }
         let labelled = match default {
             Some(default) => format!("{} [{default}]", stem(question)),
@@ -177,7 +182,6 @@ impl Prompt {
     /// to show, so the question is passed bare. Nothing is echoed for an answer
     /// that ends in the refusal.
     fn written_answer(
-        &self,
         question: &str,
         prefix: &str,
         default: Option<&str>,
@@ -289,7 +293,7 @@ impl Prompt {
             }
             return chosen.map(Some).ok_or_else(|| CANCELLED.to_string());
         }
-        self.numbered(options, current.as_slice());
+        Self::numbered(options, current.as_slice());
         let question = format!("{} [{}, 0 for none]", stem(question), range(options));
         let answer = self.read(&question, &format!("{question}: "))?;
         one_answer(&answer, options, current)
@@ -316,7 +320,7 @@ impl Prompt {
             println!("{}: {}\n", stem(question), said(&answer, options));
             return Ok(answer);
         }
-        self.numbered(options, on);
+        Self::numbered(options, on);
         let several = match options.len() {
             1 => "",
             _ => ", several",
@@ -332,7 +336,7 @@ impl Prompt {
 
     /// `on` marks what is already true, and marks nothing for a question that
     /// opens with nothing chosen.
-    fn numbered(&self, options: &[Choice], on: &[usize]) {
+    fn numbered(options: &[Choice], on: &[usize]) {
         for (index, option) in options.iter().enumerate() {
             let mark = match (on.is_empty(), on.contains(&index)) {
                 (true, _) => "",

@@ -2,6 +2,7 @@
 //! prints and exits. Nothing here scrolls or holds state. The terminal already
 //! scrolls, which keeps `tect graph | less` and `| grep` working.
 
+use crate::ui::term::to_cells;
 use ratatui::backend::IntoCrossterm;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -30,18 +31,18 @@ fn table(width: u16, title: &str, header: &[&str], rows: &[(Vec<String>, bool)])
     let widths = columns(header, rows, width.saturating_sub(2));
     // The table frame takes the width of its own cells. A frame stretched to the
     // terminal is the padding this rendering exists to stop.
-    let frame = (widths.iter().sum::<u16>() + widths.len() as u16 + 1)
-        .max(title.chars().count() as u16 + 2)
+    let frame = (widths.iter().sum::<u16>() + to_cells(widths.len()) + 1)
+        .max(to_cells(title.chars().count() + 2))
         .min(width);
 
     let head = fold(&widths, header.iter().map(|name| (*name).to_string()));
-    let titles = head.iter().map(Vec::len).max().unwrap_or(1) as u16;
+    let titles = to_cells(head.iter().map(Vec::len).max().unwrap_or(1));
     let mut height = 2 + titles;
     let body: Vec<Row> = rows
         .iter()
         .map(|(cells, defect)| {
             let folded = fold(&widths, cells.iter().cloned());
-            let lines = folded.iter().map(Vec::len).max().unwrap_or(1) as u16;
+            let lines = to_cells(folded.iter().map(Vec::len).max().unwrap_or(1));
             height += lines;
             let row = cells_of(folded).height(lines);
             match defect {
@@ -80,7 +81,7 @@ fn cells_of(folded: Vec<Vec<String>>) -> Row<'static> {
 fn columns(header: &[&str], rows: &[(Vec<String>, bool)], room: u16) -> Vec<u16> {
     let natural = header.iter().enumerate().map(|(at, name)| {
         let cells = rows.iter().map(|(cells, _)| cells[at].chars().count());
-        Constraint::Max(cells.max().unwrap_or(0).max(name.chars().count()) as u16)
+        Constraint::Max(to_cells(cells.max().unwrap_or(0).max(name.chars().count())))
     });
     Layout::horizontal(natural.collect::<Vec<_>>())
         .spacing(1)
@@ -260,7 +261,10 @@ mod tests {
     #[test]
     fn a_column_is_never_wider_than_the_longest_thing_in_it() {
         let widths = columns(&HEADER, &rows(), 78);
-        assert_eq!(widths, ["nothing-provides".len() as u16, 11]);
+        assert_eq!(
+            widths,
+            [u16::try_from("nothing-provides".len()).unwrap(), 11]
+        );
     }
 
     #[test]

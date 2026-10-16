@@ -37,54 +37,55 @@ use ratatui::Terminal;
 /// strings. The copies here let a test assert a widget's geometry against text of
 /// the real shape while this crate depends on no calling command.
 mod copy {
-    pub const DONE_KEYS: &str = "enter to restart, esc to quit the installer";
-    pub const EFI_CELL: &str = "efi";
-    pub const ERASE_WARNING_SECURE_BOOT: &str = "secure boot: the platform key must be cleared";
-    pub const ERASE_WARNING_UEFI_SETUP: &str = "afterwards, in UEFI setup: Custom mode";
-    pub const FORMAT_TICK: &str = "\u{2713}";
-    pub const GO_BACK: &str = "Go back";
-    pub const INSTALL: &str = "Install";
-    pub const INSTALLATION_SUMMARY: &str = "Installation Summary";
-    pub const INSTALL_DONE: &str = "Installation Complete!";
-    pub const INSTALL_KEYS: &str = "\u{2191}\u{2193} navigate \u{2022} \u{23ce}  select";
-    pub const NEXT_STEPS_HEADING: &str = "Next Steps:";
-    pub const OPENED_ADD_KEY: &str = "add a key file for boot";
-    pub const OPENED_KEYFILE_PLAIN: &str =
+    pub(super) const DONE_KEYS: &str = "enter to restart, esc to quit the installer";
+    pub(super) const EFI_CELL: &str = "efi";
+    pub(super) const ERASE_WARNING_SECURE_BOOT: &str =
+        "secure boot: the platform key must be cleared";
+    pub(super) const ERASE_WARNING_UEFI_SETUP: &str = "afterwards, in UEFI setup: Custom mode";
+    pub(super) const FORMAT_TICK: &str = "\u{2713}";
+    pub(super) const GO_BACK: &str = "Go back";
+    pub(super) const INSTALL: &str = "Install";
+    pub(super) const INSTALLATION_SUMMARY: &str = "Installation Summary";
+    pub(super) const INSTALL_DONE: &str = "Installation Complete!";
+    pub(super) const INSTALL_KEYS: &str = "\u{2191}\u{2193} navigate \u{2022} \u{23ce}  select";
+    pub(super) const NEXT_STEPS_HEADING: &str = "Next Steps:";
+    pub(super) const OPENED_ADD_KEY: &str = "add a key file for boot";
+    pub(super) const OPENED_KEYFILE_PLAIN: &str =
         "the root is not encrypted, so the key would be readable";
-    pub const PASSWORD_SET: &str = "set";
-    pub const READY: &str = "Ready to install?";
-    pub const RECOVERY_HEADING: &str = "LUKS disk encryption recovery key:";
-    pub const RESTART_AUTO: &str = "Restart and finalize (automatic)";
-    pub const RESTART_MANUAL: &str = "Restart and finalize (manual)";
-    pub const AUTO_WINDOW: &str = "until then this key opens the disk without a passphrase";
-    pub const ROW_ENCRYPTION: &str = "encryption";
-    pub const SHUT_DOWN: &str = "Shut down";
-    pub const START_INSTALLATION: &str = "Start Installation";
+    pub(super) const PASSWORD_SET: &str = "set";
+    pub(super) const READY: &str = "Ready to install?";
+    pub(super) const RECOVERY_HEADING: &str = "LUKS disk encryption recovery key:";
+    pub(super) const RESTART_AUTO: &str = "Restart and finalize (automatic)";
+    pub(super) const RESTART_MANUAL: &str = "Restart and finalize (manual)";
+    pub(super) const AUTO_WINDOW: &str = "until then this key opens the disk without a passphrase";
+    pub(super) const ROW_ENCRYPTION: &str = "encryption";
+    pub(super) const SHUT_DOWN: &str = "Shut down";
+    pub(super) const START_INSTALLATION: &str = "Start Installation";
 
-    pub fn erasing(disk: &str) -> String {
+    pub(super) fn erasing(disk: &str) -> String {
         format!("Everything on {disk} will be erased. Are you sure?")
     }
 
-    pub fn changing_partitions(disk: &str) -> String {
+    pub(super) fn changing_partitions(disk: &str) -> String {
         format!("Partitions marked format on {disk} will be erased. Are you sure?")
     }
 
-    pub fn layout_headings() -> [&'static str; 5] {
+    pub(super) fn layout_headings() -> [&'static str; 5] {
         ["size", "filesystem", "format", "type", "mount"]
     }
 
-    pub fn logging(log: Option<&std::path::Path>) -> String {
+    pub(super) fn logging(log: Option<&std::path::Path>) -> String {
         match log {
             Some(at) => format!("the install log is at {}", at.display()),
             None => "nothing here is writable, so this screen is the only copy".to_string(),
         }
     }
 
-    pub fn write_down() -> &'static str {
+    pub(super) fn write_down() -> &'static str {
         "Write it down and save it somewhere safe."
     }
 
-    pub fn required_uki_db() -> [&'static str; 3] {
+    pub(super) fn required_uki_db() -> [&'static str; 3] {
         [
                 "Secure-boot with the systemd-boot bootloader requires the image's platform key to be set in this system's UEFI.",
                 "",
@@ -95,7 +96,7 @@ mod copy {
 
 fn drawn(options: &[Choice], on: Option<&[usize]>, hint: &str, at: usize) -> String {
     let mut state = ListState::default().with_selected(Some(at));
-    let height = options.len() as u16 + 3;
+    let height = u16::try_from(options.len() + 3).unwrap();
     let mut terminal = Terminal::new(TestBackend::new(60, height)).unwrap();
     terminal
         .draw(|frame| {

@@ -155,7 +155,7 @@ pub fn choose(
     at: usize,
 ) -> Result<Option<usize>, String> {
     // The borders leave one padding row above and below the option list.
-    let height = options.len() as u16 + 4;
+    let height = to_cells(options.len() + 4);
     in_titled_overlay(WINDOW_WIDTH, height, title, || {
         inline(height, |terminal| {
             let mut cursor = at.min(options.len().saturating_sub(1));
@@ -209,7 +209,7 @@ pub fn confirm_over(
     // The fixed window must include its heading, spacing, summary rows, buttons,
     // borders and padding.
     let head = usize::from(!heading.is_empty()) * 2;
-    let height = (rows.len() + head + 2 + 4) as u16;
+    let height = to_cells(rows.len() + head + 2 + 4);
     in_titled_overlay(WINDOW_WIDTH, height, title, || {
         inline(height, |terminal| loop {
             let mut lines: Vec<Line<'static>> = Vec::new();
