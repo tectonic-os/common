@@ -169,10 +169,6 @@ pub(crate) fn decide_fits(content: usize, height: usize) -> bool {
 
 /// The selected action uses the palette's hot end, matching a selected form
 /// action.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "each parameter is distinct state of the confirmation screen"
-)]
 pub(crate) fn decide_draw(
     frame: &mut Frame,
     area: Rect,

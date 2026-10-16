@@ -32,15 +32,15 @@ fn a_pair_is_flagged_only_once_both_halves_have_been_left() {
         true => Vec::new(),
         false => vec![0, 1],
     };
-    assert_eq!(alerted(&fields, &[], pair), [false, false]);
-    assert_eq!(alerted(&fields, &[0], pair), [false, false]);
-    assert_eq!(alerted(&fields, &[0, 1], pair), [true, true]);
+    assert_eq!(alerted(&fields, &[], &pair), [false, false]);
+    assert_eq!(alerted(&fields, &[0], &pair), [false, false]);
+    assert_eq!(alerted(&fields, &[0, 1], &pair), [true, true]);
     // A pair that agrees names no form row, however much of it was left.
     let same = [
         Field::secret("password", "x"),
         Field::secret("confirm", "x"),
     ];
-    assert_eq!(alerted(&same, &[0, 1], pair), [false, false]);
+    assert_eq!(alerted(&same, &[0, 1], &pair), [false, false]);
 }
 
 /// The inline table's cursor walks over the rows the user may rest on, passes

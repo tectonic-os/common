@@ -64,7 +64,6 @@ fn give_size() {
         ws_xpixel: 0,
         ws_ypixel: 0,
     };
-    // SAFETY: TIOCSWINSZ reads one winsize, and `size` outlives the call.
     unsafe { libc::ioctl(libc::STDOUT_FILENO, libc::TIOCSWINSZ, &size) };
 }
 

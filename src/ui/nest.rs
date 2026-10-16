@@ -186,10 +186,7 @@ pub(crate) fn nest<B: Backend>(
 /// Draws the tree rows, the detail of the highlighted row, and the filter as it
 /// is typed. A module rule's description is prose, and the detail pane under the
 /// tree has room a label row does not.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "each parameter is distinct state of the tree screen"
-)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn nested(
     frame: &mut Frame,
     area: Rect,
