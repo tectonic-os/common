@@ -66,7 +66,11 @@ fn the_completion_screen_draws_the_recovery_key() {
     // action opens states itself in the warning colour, ahead of the actions.
     let at = options.len() - 2;
     let mut state = ListState::default().with_selected(Some(at));
-    let mut terminal = Terminal::new(TestBackend::new(72, options.len() as u16 + 2)).unwrap();
+    let mut terminal = Terminal::new(TestBackend::new(
+        72,
+        u16::try_from(options.len() + 2).unwrap(),
+    ))
+    .unwrap();
     terminal
         .draw(|frame| {
             draw(
@@ -109,7 +113,7 @@ fn the_completion_screen_draws_the_recovery_key() {
             .position(|line| line.contains(heading))
             .unwrap_or_else(|| panic!("{heading} is not on the screen: {drawn}"));
         let cell = (0..buffer.area.width)
-            .map(|column| &buffer[(column, row as u16)])
+            .map(|column| &buffer[(column, u16::try_from(row).unwrap())])
             .find(|cell| !cell.symbol().trim().is_empty())
             .unwrap_or_else(|| panic!("{heading} has no ink: {drawn}"));
         assert_eq!(cell.fg, Color::White, "{heading} is not white: {drawn}");
@@ -160,7 +164,7 @@ fn the_completion_screen_draws_the_recovery_key() {
 
     // The first action is the row the cursor opens on, and it carries the
     // palette's highlight colour.
-    let row = 1 + at as u16;
+    let row = 1 + u16::try_from(at).unwrap();
     let lit = (0..buffer.area.width)
         .map(|column| &buffer[(column, row)])
         .filter(|cell| !cell.symbol().trim().is_empty())

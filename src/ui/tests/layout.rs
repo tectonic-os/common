@@ -33,7 +33,7 @@ fn a_command_that_owns_the_screen_draws_one_box_around_the_form() {
                 frame,
                 Some("Tectonic installer"),
                 "",
-                shown.len() as u16,
+                u16::try_from(shown.len()).unwrap(),
                 copy::INSTALL_KEYS,
             );
             // What the widget is given inside a box. The box carries the legend,
@@ -222,7 +222,7 @@ fn the_longest_panel_fits_the_fallback_console() {
                 frame,
                 Some("Tectonic installer"),
                 "",
-                lines.len() as u16,
+                u16::try_from(lines.len()).unwrap(),
                 "",
             );
             sheet_of(frame, area, &lines, "", focus, 0);
@@ -397,8 +397,7 @@ fn an_actionless_window_draws_the_reason_it_refused_with() {
     assert_eq!(
         drawn.len(),
         4,
-        "two fields, the blank, and the reason: {:?}",
-        drawn
+        "two fields, the blank, and the reason: {drawn:?}"
     );
     assert!(drawn[2].is_empty(), "one blank under the field: {drawn:?}");
     assert!(drawn[3].contains(WHY), "{drawn:?}");
@@ -750,8 +749,8 @@ fn a_step_lands_on_the_next_question_without_opening_it() {
             .map(|span| span.content.to_string())
             .collect::<String>()
     };
-    assert_eq!(text(&lines[1]), "", "{:?}", lines);
-    assert!(text(&lines[2]).contains("name"), "{:?}", lines);
+    assert_eq!(text(&lines[1]), "", "{lines:?}");
+    assert!(text(&lines[2]).contains("name"), "{lines:?}");
 }
 
 /// A table field draws its headings over its rows. While the table holds the
@@ -1045,7 +1044,11 @@ fn a_form_shows_every_field_and_opens_a_list_where_it_stands() {
         &[],
         &[],
     );
-    let mut terminal = Terminal::new(TestBackend::new(64, shown.len() as u16 + 1)).unwrap();
+    let mut terminal = Terminal::new(TestBackend::new(
+        64,
+        u16::try_from(shown.len() + 1).unwrap(),
+    ))
+    .unwrap();
     terminal
         .draw(|frame| sheet_of(frame, frame.area(), &shown, copy::INSTALL_KEYS, 0, 0))
         .unwrap();

@@ -22,37 +22,37 @@ pub enum Json {
     Bool(bool),
     Number(Number),
     String(String),
-    Array(Vec<Json>),
-    Object(Vec<(String, Json)>),
+    Array(Vec<Self>),
+    Object(Vec<(String, Self)>),
 }
 
 impl Json {
     pub fn string(value: impl Into<String>) -> Self {
-        Json::String(value.into())
+        Self::String(value.into())
     }
 
     pub fn number(value: u32) -> Self {
-        Json::Number(Number(value.into()))
+        Self::Number(Number(value.into()))
     }
 
     /// Null preserves the rendered shape when an optional field has no value.
     pub fn optional(value: Option<impl Into<String>>) -> Self {
         match value {
-            Some(value) => Json::String(value.into()),
-            None => Json::Null,
+            Some(value) => Self::String(value.into()),
+            None => Self::Null,
         }
     }
 
-    pub fn array(items: impl IntoIterator<Item = Json>) -> Self {
-        Json::Array(items.into_iter().collect())
+    pub fn array(items: impl IntoIterator<Item = Self>) -> Self {
+        Self::Array(items.into_iter().collect())
     }
 
     pub fn strings(items: impl IntoIterator<Item = impl Into<String>>) -> Self {
-        Json::Array(items.into_iter().map(Json::string).collect())
+        Self::Array(items.into_iter().map(Self::string).collect())
     }
 
-    pub fn object(fields: impl IntoIterator<Item = (&'static str, Json)>) -> Self {
-        Json::Object(
+    pub fn object(fields: impl IntoIterator<Item = (&'static str, Self)>) -> Self {
+        Self::Object(
             fields
                 .into_iter()
                 .map(|(name, value)| (name.to_string(), value))
@@ -60,11 +60,11 @@ impl Json {
         )
     }
 
-    pub fn map(entries: impl IntoIterator<Item = (String, Json)>) -> Self {
-        Json::Object(entries.into_iter().collect())
+    pub fn map(entries: impl IntoIterator<Item = (String, Self)>) -> Self {
+        Self::Object(entries.into_iter().collect())
     }
 
-    pub fn parse(text: &str) -> Result<Json, String> {
+    pub fn parse(text: &str) -> Result<Self, String> {
         serde_json::from_str(text).map_err(|error| error.to_string())
     }
 
@@ -82,18 +82,18 @@ impl Serialize for Json {
         S: Serializer,
     {
         match self {
-            Json::Null => serializer.serialize_none(),
-            Json::Bool(value) => serializer.serialize_bool(*value),
-            Json::Number(value) => value.0.serialize(serializer),
-            Json::String(value) => serializer.serialize_str(value),
-            Json::Array(items) => {
+            Self::Null => serializer.serialize_none(),
+            Self::Bool(value) => serializer.serialize_bool(*value),
+            Self::Number(value) => value.0.serialize(serializer),
+            Self::String(value) => serializer.serialize_str(value),
+            Self::Array(items) => {
                 let mut sequence = serializer.serialize_seq(Some(items.len()))?;
                 for item in items {
                     sequence.serialize_element(item)?;
                 }
                 sequence.end()
             }
-            Json::Object(fields) => {
+            Self::Object(fields) => {
                 let mut map = serializer.serialize_map(Some(fields.len()))?;
                 for (name, value) in fields {
                     map.serialize_entry(name, value)?;
@@ -187,7 +187,7 @@ pub fn field<'a>(value: &'a Json, key: &str) -> Option<&'a Json> {
 pub fn declared<'a>(value: &'a Json, key: &str) -> Option<&'a Json> {
     match value {
         Json::Object(fields) => fields.iter().find(|(name, _)| name == key).map(|(_, v)| v),
-        _ => None,
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::String(_) | Json::Array(_) => None,
     }
 }
 
@@ -217,7 +217,7 @@ pub fn strings(value: &Json, key: &str) -> Vec<String> {
         .iter()
         .filter_map(|item| match item {
             Json::String(found) => Some(found.clone()),
-            _ => None,
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Array(_) | Json::Object(_) => None,
         })
         .collect()
 }

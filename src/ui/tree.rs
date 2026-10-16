@@ -31,7 +31,7 @@ fn mark(change: &Change) -> String {
 
 #[derive(Default)]
 struct Node {
-    children: BTreeMap<String, Node>,
+    children: BTreeMap<String, Self>,
     dir: bool,
     change: Option<Change>,
 }

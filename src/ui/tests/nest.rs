@@ -31,7 +31,7 @@ fn nest_drawn_at(
     let nodes = nodes(options);
     let rows = shown(&nodes, options, open, filter);
     let mut state = ListState::default().with_selected(Some(at));
-    let height = rows.len() as u16 + 5;
+    let height = u16::try_from(rows.len() + 5).unwrap();
     let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
     terminal
         .draw(|frame| {

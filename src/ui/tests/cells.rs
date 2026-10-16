@@ -76,7 +76,8 @@ fn the_inline_table_marks_the_cursor_and_which_answers_are_set() {
         let line = row_text(row);
         // Table columns count characters and never bytes. Branch glyphs run to
         // more than one byte each.
-        let column = line[..line.find(text).expect("the column")].chars().count() as u16;
+        let column =
+            u16::try_from(line[..line.find(text).expect("the column")].chars().count()).unwrap();
         &buffer[(column, row)]
     };
     let disk_row = row_of("64G");

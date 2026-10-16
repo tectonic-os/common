@@ -53,7 +53,7 @@ pub(crate) fn sheet_of(
         .saturating_sub(height.saturating_sub(1))
         .min(lines.len().saturating_sub(height));
     frame.render_widget(
-        Paragraph::new(lines.to_vec()).scroll((scroll as u16, 0)),
+        Paragraph::new(lines.to_vec()).scroll((to_cells(scroll), 0)),
         body,
     );
     frame.render_widget(Line::from(keys.dim()), foot);
@@ -75,7 +75,7 @@ pub fn review(
     at: usize,
 ) -> Result<Option<usize>, String> {
     let options = sheet(rows, action, blocked);
-    let chosen = inline((options.len() + 2) as u16, |terminal| {
+    let chosen = inline(to_cells(options.len() + 2), |terminal| {
         pick(
             terminal,
             question,
@@ -129,7 +129,7 @@ pub fn decide(
 ) -> Result<bool, String> {
     let content = decide_content_height(heading, note, warning, rows);
     let mut button = 0;
-    inline((content + 2) as u16, |terminal| loop {
+    inline(to_cells(content + 2), |terminal| loop {
         if !decide_fits(
             content,
             terminal
@@ -142,7 +142,7 @@ pub fn decide(
                 "the confirmation is too tall to show every destructive change".to_string(),
             );
         }
-        render(terminal, content as u16, SIDE, heading, |frame, area| {
+        render(terminal, to_cells(content), SIDE, heading, |frame, area| {
             decide_draw(
                 frame, area, heading, note, warning, rows, ready, yes, no, button,
             )
@@ -245,22 +245,26 @@ pub(crate) fn decide_draw(
     // Inside a widget box this draws as a block in the middle of it. Outside one
     // it fills the region. A summary longer than the box keeps its action buttons
     // and gives up its narrowest rows. The answers are the last thing to lose.
-    let widest = lines
-        .iter()
-        .chain(&footer)
-        .map(Line::width)
-        .max()
-        .unwrap_or(0) as u16;
+    let widest = to_cells(
+        lines
+            .iter()
+            .chain(&footer)
+            .map(Line::width)
+            .max()
+            .unwrap_or(0),
+    );
     let placed = match boxed() {
         true => {
-            let all = lines.len() as u16 + footer.len() as u16;
+            let all = to_cells(lines.len() + footer.len());
             centred(area, widest, all)
         }
         false => area,
     };
-    let [body, act] =
-        Layout::vertical([Constraint::Min(0), Constraint::Length(footer.len() as u16)])
-            .areas(placed);
+    let [body, act] = Layout::vertical([
+        Constraint::Min(0),
+        Constraint::Length(to_cells(footer.len())),
+    ])
+    .areas(placed);
     frame.render_widget(Paragraph::new(lines), body);
     frame.render_widget(Paragraph::new(footer), act);
 }
@@ -279,7 +283,7 @@ pub fn offer_over(
     let first = options.len() + 1;
     options.push(Choice::new("", ""));
     options.extend(actions.iter().cloned());
-    let chosen = inline((options.len() + 2) as u16, |terminal| {
+    let chosen = inline(to_cells(options.len() + 2), |terminal| {
         pick(terminal, question, &options, keys, first)
     })?;
     Ok(chosen.and_then(|chosen| chosen.checked_sub(first)))
