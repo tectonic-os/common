@@ -658,10 +658,10 @@ fn a_flagged_pair_is_drawn_red_on_its_values() {
         &[],
         &[],
     );
-    for line in &lines[..2] {
-        let value = line.spans.last().expect("a value span");
-        assert_eq!(value.style.fg, Some(ALERT), "{line:?}");
-        let label = line
+    for at in 0..2 {
+        let value = lines[at].spans.last().expect("a value span");
+        assert_eq!(value.style.fg, Some(ALERT), "{:?}", lines[at]);
+        let label = lines[at]
             .spans
             .iter()
             .find(|span| span.content.contains("password") || span.content.contains("confirm"))

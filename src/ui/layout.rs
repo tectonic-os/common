@@ -40,10 +40,7 @@ pub(crate) fn alerted(
 /// blank, the action buttons, and the reason the first button is stopped. `open`
 /// is the option the cursor is on inside `fields[cursor]`. No other field can be
 /// open, because a form shows one option list at a time.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "each parameter is distinct state of the form screen"
-)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn laid_out(
     fields: &[Field],
     visible: &[usize],
