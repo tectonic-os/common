@@ -377,7 +377,11 @@ pub enum HeaderLine {
 
 /// One state drives both the drawn control and the next key, so the screen
 /// cannot disagree with its input routing.
-pub(super) enum Mode {
+#[cfg_attr(
+    not(feature = "test-support"),
+    expect(unreachable_pub, reason = "ui::testing re-exports it as FormMode")
+)]
+pub enum Mode {
     Rows,
     Typing,
     Open(usize),
