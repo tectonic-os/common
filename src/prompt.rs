@@ -343,7 +343,13 @@ impl Prompt {
                 (false, true) => "[x] ",
                 (false, false) => "[ ] ",
             };
-            let line = format!("{mark}{}  {}", option.label, option.detail);
+            // Dim ink marks an unavailable option on a drawn list. A numbered
+            // list has no ink, so it says so in words.
+            let absent = match option.dim {
+                true => "(unavailable) ",
+                false => "",
+            };
+            let line = format!("{mark}{absent}{}  {}", option.label, option.detail);
             println!("  {}) {}", index + 1, line.trim_end());
         }
     }
@@ -365,14 +371,25 @@ fn one_answer(
     if let (true, Some(current)) = (answer.is_empty(), current) {
         return Ok(Some(current));
     }
-    match answer.parse::<usize>() {
-        Ok(0) => Ok(None),
-        Ok(number) if number <= options.len() => Ok(Some(number - 1)),
+    let at = match answer.parse::<usize>() {
+        Ok(0) => return Ok(None),
+        Ok(number) if number <= options.len() => number - 1,
         _ => options
             .iter()
             .position(|option| option.label == answer)
-            .map(Some)
-            .ok_or_else(|| format!("`{answer}` is not one of them")),
+            .ok_or_else(|| format!("`{answer}` is not one of them"))?,
+    };
+    choosable(answer, options, at).map(Some)
+}
+
+/// Refuses an answer that names an option the drawn list would not let the
+/// user pick, and says why with the option's own detail.
+fn choosable(answer: &str, options: &[Choice], at: usize) -> Result<usize, String> {
+    let option = &options[at];
+    match (option.available, option.detail.is_empty()) {
+        (true, _) => Ok(at),
+        (false, true) => Err(format!("`{answer}` cannot be chosen")),
+        (false, false) => Err(format!("`{answer}` cannot be chosen: {}", option.detail)),
     }
 }
 
@@ -390,6 +407,7 @@ fn many_answer(answer: &str, options: &[Choice], on: &[usize]) -> Result<Answer,
                 .position(|option| option.label == word)
                 .ok_or_else(|| format!("`{word}` is not one of them"))?,
         };
+        let at = choosable(word, options, at)?;
         if !chosen.contains(&at) {
             chosen.push(at);
         }
@@ -596,6 +614,20 @@ mod tests {
             scripted(&["4"]).choose("Choose?", &options(3)),
             Err("`4` is not one of them".into())
         );
+    }
+
+    #[test]
+    fn a_scripted_answer_naming_an_unavailable_option_is_refused_with_its_reason() {
+        let mut options = options(3);
+        options[1] = Choice::new("two", "supports fedora").unavailable();
+        assert_eq!(
+            scripted(&["2"]).choose("Choose?", &options),
+            Err("`2` cannot be chosen: supports fedora".into())
+        );
+        assert!(matches!(
+            scripted(&["1 two"]).choose_many("Choose?", &options, &[]),
+            Err(message) if message == "`two` cannot be chosen: supports fedora"
+        ));
     }
 
     #[test]

@@ -20,6 +20,17 @@ pub const SIDE: &str = "\u{2190}/\u{2192} select \u{2022} \u{23ce}  confirm \u{2
 /// The nested-tree legend names no `j` or `k` key. Every printable key goes to
 /// the filter string.
 pub(crate) const NEST: &str = "\u{2191}\u{2193} navigate \u{2022} \u{2190}/\u{2192} open \u{2022} \u{2423} toggle \u{2022} \u{23ce}  confirm \u{2022} Esc cancel";
+/// Replaces `NEST` while some option is unavailable. Tab hides those rows,
+/// and the navigate word goes so the legend still fits the narrowest terminal.
+pub(crate) const NEST_HIDE: &str = "\u{2191}\u{2193} \u{2022} \u{2190}/\u{2192} open \u{2022} \u{2423} toggle \u{2022} \u{21e5} hide \u{2022} \u{23ce}  confirm \u{2022} Esc cancel";
+/// Replaces `NEST_HIDE` while the unavailable rows are hidden.
+pub(crate) const NEST_SHOW: &str = "\u{2191}\u{2193} \u{2022} \u{2190}/\u{2192} open \u{2022} \u{2423} toggle \u{2022} \u{21e5} show \u{2022} \u{23ce}  confirm \u{2022} Esc cancel";
+/// Replaces `TOGGLE` while some option is unavailable.
+pub(crate) const TOGGLE_HIDE: &str =
+    "\u{2191}\u{2193} navigate \u{2022} \u{2423} toggle \u{2022} \u{21e5} hide \u{2022} \u{23ce}  confirm \u{2022} Esc cancel";
+/// Replaces `TOGGLE_HIDE` while the unavailable rows are hidden.
+pub(crate) const TOGGLE_SHOW: &str =
+    "\u{2191}\u{2193} navigate \u{2022} \u{2423} toggle \u{2022} \u{21e5} show \u{2022} \u{23ce}  confirm \u{2022} Esc cancel";
 /// Shown while an option list or the inline table holds the keys. Esc closes
 /// that list and leaves the form row unanswered.
 pub(crate) const SUB_KEYS: &str =

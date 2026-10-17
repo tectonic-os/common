@@ -221,3 +221,16 @@ fn framed(
         .unwrap();
     terminal.backend().to_string()
 }
+
+#[test]
+fn a_hidden_option_shifts_no_drawn_parent() {
+    let options = [
+        Choice::new("gone", "").unavailable(),
+        Choice::new("image", ""),
+        Choice::new("flavour", "").under(1),
+    ];
+    let (kept, rows) = visible(&options, true);
+    assert_eq!(kept, vec![1, 2]);
+    assert_eq!(rows[1].parent, Some(0));
+    assert_eq!(visible(&options, false).0, vec![0, 1, 2]);
+}

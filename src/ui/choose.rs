@@ -2,7 +2,7 @@ use crate::ui::chrome::*;
 use crate::ui::nest::*;
 use crate::ui::progress::*;
 use crate::ui::term::*;
-use crate::ui::{EITHER, EITHER_CANCEL, PICK, TOGGLE};
+use crate::ui::{EITHER, EITHER_CANCEL, PICK, TOGGLE, TOGGLE_HIDE, TOGGLE_SHOW};
 use ratatui::backend::Backend;
 use ratatui::crossterm::event::KeyCode;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -410,20 +410,34 @@ pub(crate) fn toggle<B: Backend>(
 ) -> Result<Answer, String> {
     let mut state = ListState::default().with_selected(Some(0));
     let mut on: Vec<usize> = held.to_vec();
+    let mut hide = false;
+    let unavailable = options.iter().any(|choice| choice.dim);
     loop {
+        let (kept, rows) = visible(options, hide);
+        let marked: Vec<usize> = kept
+            .iter()
+            .enumerate()
+            .filter(|(_, at)| on.contains(at))
+            .map(|(row, _)| row)
+            .collect();
+        let legend = match (unavailable, hide) {
+            (false, _) => TOGGLE,
+            (true, false) => TOGGLE_HIDE,
+            (true, true) => TOGGLE_SHOW,
+        };
         render(
             terminal,
             height(options.len()),
-            TOGGLE,
+            legend,
             question,
             |frame, area| {
                 draw(
                     frame,
                     area,
                     question,
-                    options,
-                    Some(&on),
-                    TOGGLE,
+                    &rows,
+                    Some(&marked),
+                    legend,
                     &mut state,
                 )
             },
@@ -431,14 +445,41 @@ pub(crate) fn toggle<B: Backend>(
         let Some(key) = read()? else { continue };
         match key {
             KeyCode::Enter => return Ok(Answer::Chosen(on)),
-            KeyCode::Char(' ') => match state.selected() {
-                Some(at) if available(options, at) => flip(&mut on, at, options),
+            KeyCode::Char(' ') => match state.selected().and_then(|row| kept.get(row)) {
+                Some(at) if available(options, *at) => flip(&mut on, *at, options),
                 _ => {}
             },
+            KeyCode::Tab if unavailable => {
+                hide = !hide;
+                let left = visible(options, hide).0.len();
+                state.select(Some(
+                    state.selected().unwrap_or(0).min(left.saturating_sub(1)),
+                ));
+            }
             KeyCode::Esc | KeyCode::Char('q') => return Ok(Answer::Cancelled),
-            code => move_by(code, &mut state, options.len()),
+            code => move_by(code, &mut state, kept.len()),
         }
     }
+}
+
+/// Lists the options `toggle` draws, by index into `options`, beside the rows
+/// that draw them. A row's parent is renumbered to the drawn rows, so a hidden
+/// option never shifts the branch lines.
+pub(crate) fn visible(options: &[Choice], hide: bool) -> (Vec<usize>, Vec<Choice>) {
+    let kept: Vec<usize> = (0..options.len())
+        .filter(|at| !hide || !options[*at].dim)
+        .collect();
+    let rows = kept
+        .iter()
+        .map(|at| {
+            let mut row = options[*at].clone();
+            row.parent = row
+                .parent
+                .and_then(|parent| kept.iter().position(|held| *held == parent));
+            row
+        })
+        .collect();
+    (kept, rows)
 }
 
 pub(crate) fn available(options: &[Choice], at: usize) -> bool {
