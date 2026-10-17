@@ -7,7 +7,7 @@ use crate::ui::form::{draw_table_menu, form_frame_rows};
 use crate::ui::layout::laid_out;
 use crate::ui::progress::{progress_head, working, ROWS};
 use crate::ui::review::{decide_content_height, decide_draw, sheet_of, written, LINE_ROWS};
-use crate::ui::term::{height as picker_height, render_with_title};
+use crate::ui::term::{height as picker_height, render_with_title, to_cells};
 use crate::ui::{Choice, Field, HeaderLine, LINE_KEYS, SIDE, SUB_KEYS};
 use ratatui::backend::TestBackend;
 use ratatui::buffer::Buffer;
@@ -236,7 +236,12 @@ impl ConfirmationFrame<'_> {
             SIDE,
             || {
                 (
-                    decide_content_height(self.heading, self.note, self.warning, self.rows) as u16,
+                    to_cells(decide_content_height(
+                        self.heading,
+                        self.note,
+                        self.warning,
+                        self.rows,
+                    )),
                     self.heading.to_string(),
                 )
             },
